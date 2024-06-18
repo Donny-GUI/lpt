@@ -1,17 +1,78 @@
 from luaparser import ast as lua_ast
-from typehints import LuaNode, PythonNode
+from transpiler.typehints import LuaNode, PythonNode
 import ast
-from util import cos, change_extension
-from nodes import PythonFalseKeyword, PythonNone, PythonNothing, PythonTrueKeyword
+from transpiler.util import cos, change_extension
+from transpiler.nodes import PythonFalseKeyword, PythonNone, PythonNothing, PythonTrueKeyword
 import os 
+import astor
 
 
+fix = ast.fix_missing_locations
+src = astor.code_gen.to_source
+
+def unparse_node(node: ast.AST):
+    n = fix(node)
+    try:
+        return n 
+    except Exception as e:
+        print(e)
+        if isinstance(n, ast.FunctionDef):
+            n.decorator_list = []
+            return unparse_node(n)
+
+def create_function_def(name, args, body=None, returns=None, decorators=None):
+    """
+    Create an ast.FunctionDef node.
+
+    Parameters:
+    - name (str): The name of the function.
+    - args (list of str): List of argument names.
+    - body (list of str): List of strings representing the body of the function.
+    - returns (str, optional): The return type hint as a string.
+    - decorators (list of str, optional): List of strings representing decorators.
+
+    Returns:
+    - ast.FunctionDef: An ast.FunctionDef node.
+    """
+    # Convert argument names to ast.arg nodes
+    arguments = ast.arguments(
+        posonlyargs=[],  # Positional-only arguments
+        args=[ast.arg(arg=arg_name, annotation=None) for arg_name in args],
+        vararg=None,  # *args
+        kwonlyargs=[],  # Keyword-only arguments
+        kw_defaults=[],  # Defaults for kwonlyargs
+        kwarg=None,  # **kwargs
+        defaults=[]  # Defaults for args
+    )
+    
+    # Convert body lines to ast.Expr nodes
+    if body!=None:
+        body_nodes = [ast.parse(stmt).body[0] for stmt in body]
+    else:
+        body_nodes = body
+    # Convert return type hint to ast
+    return_node = ast.parse(returns).body[0].value if returns else None
+    
+    # Convert decorators to ast.Expr nodes
+    decorator_nodes = [ast.Name(id=deco, ctx=ast.Load()) for deco in (decorators or [])]
+    
+    # Create the FunctionDef node
+    function_def = ast.FunctionDef(
+        name=name,
+        args=arguments,
+        body=body_nodes,
+        decorator_list=decorator_nodes,
+        returns=return_node,
+        type_comment=None
+    )
+    function_def.decorator_list = []
+    return ast.fix_missing_locations(function_def)
 
 ###[-] Object Classes
 
-class LuaToPythonTranspiler(lua_ast.AstVisitor):
-    def __init__(self):
-        self.lnodes = []
+class LuaToPythonTranspiler(lua_ast.ASTVisitor):
+    def __init__(self, nodes: list[LuaNode]= []):
+        self.lnodes = nodes
         self.python_ast = None
         self.nmap = {}
     
@@ -32,9 +93,9 @@ class LuaToPythonTranspiler(lua_ast.AstVisitor):
         return ast.Module(body=body)
 
     def visit_Assignment(self, node: lua_ast.Assign) -> ast.AST:
-        targets = [self.generic_visit(v) for v in node.targets]
-        value = self.generic_visit(node.values[0]) if node.values else ast.Constant(value=None)
-        return ast.Assign(targets=targets, value=value)
+        targets = [fix(self.generic_visit(v)) for v in node.targets]
+        value = self.generic_visit(node.values[0]) if node.values else fix(ast.Constant(value=None))
+        return fix(ast.Assign(targets=targets, value=value))
 
     def visit_Name(self, node: lua_ast.Name) -> ast.AST:
         return ast.Name(id=node.id, ctx=ast.Load())
@@ -49,19 +110,7 @@ class LuaToPythonTranspiler(lua_ast.AstVisitor):
         self.nmap[node] = node2
 
     def visit_Function(self, node: lua_ast.Function) -> ast.AST:
-        name = self.generic_visit(node.name)
-        args = [self.generic_visit(arg) for arg in node.args]
-        body = [self.generic_visit(statement) for statement in node.body]
-        return ast.FunctionDef(
-            name=name,
-            args=ast.arguments(
-                args=[ast.arg(arg=a.name, annotation=None) for a in args],
-                vararg=None,
-                kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[]
-            ),
-            body=body,
-            decorator_list=[]
-        )
+        return create_function_def(name=node.name.display_name, args=[n.display_name for n in node.args])
 
     def visit_Call(self, node: lua_ast.Call) -> ast.AST:
         func = self.generic_visit(node.func)
@@ -245,8 +294,17 @@ class LuaToPythonTranspiler(lua_ast.AstVisitor):
         
     def visit_While(self, node: lua_ast.While) -> ast.AST:
         return ast.While()
+    
+    def convert_nodes(self, nodes:list[LuaNode]=[]):
+        if nodes == []:
+            nodes = self.lnodes
+        retv = []
+        for node in nodes:
+            retv.append(self.generic_visit(node))
+        return retv 
         
     def generic_visit(self, node) -> ast.AST:
+        pynode = None
         if isinstance(node, lua_ast.Block):
             pynode = self.visit_Block(node)
         elif isinstance(node, lua_ast.Assign):
@@ -261,8 +319,6 @@ class LuaToPythonTranspiler(lua_ast.AstVisitor):
             pynode = self.visit_Function(node)
         elif isinstance(node, lua_ast.Call):
             pynode = self.visit_Call(node)
-        elif isinstance(node, lua_ast.Expression):
-            pynode = self.visit_Expr(node)
         elif isinstance(node, lua_ast.AnonymousFunction):
             pynode = self.visit_AnonymousFunction(node)
         elif isinstance(node, lua_ast.AddOp):
@@ -363,9 +419,10 @@ class LuaToPythonTranspiler(lua_ast.AstVisitor):
         elif isinstance(node, lua_ast.While):
             pynode = self.visit_While(node)
         else:
-            raise NotImplementedError(f"Unsupported node type: {type(node).__name__}")
-        
-        return pynode
+            print(f"Unsupported node type: {type(node).__name__}")
+            print(node)
+            return None
+        return ast.fix_missing_locations(pynode)
     
     def convert_file(self, filepath: str) -> str:
         """
@@ -378,12 +435,9 @@ class LuaToPythonTranspiler(lua_ast.AstVisitor):
         if os.path.exists(filepath) == True:
             with open(filepath, "r") as f:
                 content = f.read()
-            string = self.convert_string(content)
-            path = change_extension(filepath)
-            with open(path, "w") as f:
-                f.write(string)
-            return path
-        return 
+            return self.convert_string(content)
+            
+        return None
             
     def convert_string(self, lua: str):
         """
@@ -396,7 +450,18 @@ class LuaToPythonTranspiler(lua_ast.AstVisitor):
         """
         lua_chunk: lua_ast.Chunk = lua_ast.parse(lua)
         nodes = []
-        for x in lua_chunk.body:
-            nodes.append(self.generic_visit(x))
-        mod = ast.Module(body=nodes)
-        return ast.unparse(mod)
+        try:
+            for x in lua_chunk.body.body:
+                y = self.generic_visit(x)
+                if y == None:
+                    continue
+                nodes.append(src(fix(y)))
+        except TypeError as te:
+            print(te)
+            print("ABORTED")
+            return
+        for node in nodes:
+            print(node)
+        input()
+        
+        return x

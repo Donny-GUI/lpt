@@ -12,4 +12,8 @@ def cos(node: lua_ast.Node) -> int:
 
     gets the column offset from a lua node
     """
-    return node.end_char - node.start_char
+    try:
+        x = node.end_char - node.start_char
+        return x
+    except:
+        return 0
