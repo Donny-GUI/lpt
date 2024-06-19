@@ -1,9 +1,9 @@
 from transpiler.transpiler import LuaToPythonTranspiler
 from luaparser import ast as lua_ast
 from luaparser import parser as lua_parser
-from util.file import get_files_by_extension
-from util.path import desktop_path
-from util.source import python_ast_path
+from tools.file import get_files_by_extension
+from tools.path import desktop_path
+from tools.source import python_ast_path
 
 print(python_ast_path())
 
@@ -21,4 +21,4 @@ def test_trans():
         python = transpiler.convert_file(file)
         input()
 
-from templates.python import all_templates
+
