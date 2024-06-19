@@ -1,5 +1,3 @@
-import ast
-
 import sys
 import os
 try:
@@ -9,259 +7,216 @@ except:
     sys.path.insert(0, parent_dir)
 finally:
     from tools.path import allow_local_modules
-    from tools.source import python_ast_classes, python_ast_names, get_luaast_names, get_ast_names
     allow_local_modules()
 from luaparser.astnodes import Node
 from luaparser import astnodes
-from transform.lua import get_subtype, has_args, has_body, hasbody, hasargs
+from transform.lua import get_subtype, all_nodes
 
-
-class Require(Node):
-    def __init__(self, name: str, path: str, comments: astnodes.List[astnodes.Comment] | None = None, first_token: astnodes.CommonToken | None = None, last_token: astnodes.CommonToken | None = None):
-        super().__init__(name, comments, first_token, last_token)
-        self.path = path
+total_nodes = []
 
 LUAAST = Node
-lua_to_python_node = {
-    astnodes.AddOp: ast.Add,                           # Addition operator
-    astnodes.AndLoOp: ast.And,                         # Logical AND operator
-    astnodes.AnonymousFunction: ast.Lambda,            # Anonymous function (lambda)
-    astnodes.AriOp: [ast.Add, ast.Sub, ast.Mult, ast.Div],   # Arithmetic operators
-    astnodes.Assign: ast.Assign,                       # Assignment
-    astnodes.BAndOp: ast.BitAnd,                       # Bitwise AND operator
-    astnodes.BOrOp: ast.BitOr,                         # Bitwise OR operator
-    astnodes.BShiftLOp: ast.LShift,                    # Left bitwise shift
-    astnodes.BShiftROp: ast.RShift,                    # Right bitwise shift
-    astnodes.BXorOp: ast.BitXor,                       # Bitwise XOR operator
-    astnodes.BinaryOp: ast.BinOp,                      # Binary operation
-    astnodes.BitOp: [ast.BitAnd, ast.BitOr, ast.BitXor, ast.LShift, ast.RShift],  # Bitwise operations
-    astnodes.Block: ast.Module,                        # Block of statements (module)
-    astnodes.Break: ast.Break,                         # Break statement
-    astnodes.Call: ast.Call,                           # Function call
-    astnodes.Chunk: ast.Module,                        # Entire chunk of code (module)
-    astnodes.Comment: None,                          # Comments (ignored in Python AST)
-    astnodes.Concat: [ast.BinOp],                        # Concatenation (binary operation)
-    astnodes.Do: ast.Expr,                             # Do statement (expression grouping)
-    astnodes.Dots: ast.Ellipsis,                         # Vararg (`...`)
-    astnodes.ElseIf: ast.If,                           # ElseIf clause (part of If)
-    astnodes.EqToOp: ast.Eq,                           # Equality operator
-    astnodes.ExpoOp: ast.Pow,                          # Exponentiation operator
-    astnodes.Expression: ast.Expr,                     # Expression
-    astnodes.FalseExpr: ast.Constant,                  # False literal (constant)
-    astnodes.Field: ast.Dict,                          # Table field (dictionary)
-    astnodes.FloatDivOp: ast.Div,                      # Float division operator
-    astnodes.FloorDivOp: ast.FloorDiv,                 # Floor division operator
-    astnodes.Forin: ast.For,                           # Generic for loop
-    astnodes.Fornum: ast.For,                          # Numeric for loop
-    astnodes.Function: ast.FunctionDef,                # Function definition
-    astnodes.Goto: None,                             # Goto statement (no direct equivalent)
-    astnodes.GreaterOrEqThanOp: ast.GtE,               # Greater than or equal operator
-    astnodes.GreaterThanOp: ast.Gt,                    # Greater than operator
-    astnodes.If: ast.If,                               # If statement
-    astnodes.Index: ast.Subscript,                     # Table indexing (subscripting)
-    astnodes.Invoke: ast.Call,                         # Method invocation (function call)
-    astnodes.Label: None,                            # Label (no direct equivalent)
-    astnodes.LessOrEqThanOp: ast.LtE,                  # Less than or equal operator
-    astnodes.LessThanOp: ast.Lt,                       # Less than operator
-    astnodes.Lhs: ast.Name,                            # Left-hand side of assignment
-    astnodes.LoOp: [ast.And, ast.Or],                    # Logical operations
-    astnodes.LocalAssign: ast.Assign,                  # Local assignment
-    astnodes.LocalFunction: ast.FunctionDef,           # Local function definition
-    astnodes.Method: ast.FunctionDef,                  # Method definition (treated as function)
-    astnodes.ModOp: ast.Mod,                           # Modulus operator
-    astnodes.MultOp: ast.Mult,                         # Multiplication operator
-    astnodes.Name: ast.Name,                           # Identifier (name)
-    astnodes.Nil: ast.Constant,                        # Nil literal (constant None)
-    astnodes.Node: ast.AST,                            # Base node type
-    astnodes.NotEqToOp: ast.NotEq,                     # Inequality operator
-    astnodes.Number: ast.Constant,                     # Number literal (constant)
-    astnodes.Op: [ast.BinOp, ast.UnaryOp],               # General operator (binary or unary)
-    astnodes.OrLoOp: ast.Or,                           # Logical OR operator
-    astnodes.RelOp: [ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE],  # Relational operations
-    astnodes.Repeat: ast.While,                        # Repeat-until loop (while loop)
-    astnodes.Return: ast.Return,                       # Return statement
-    astnodes.SemiColon: None,                        # Semicolon (no direct equivalent)
-    astnodes.Statement: ast.stmt,                      # General statement
-    astnodes.String: ast.Constant,                     # String literal (constant)
-    astnodes.SubOp: ast.Sub,                           # Subtraction operator
-    astnodes.Table: ast.Dict,                          # Table constructor (dictionary)
-    astnodes.TrueExpr: ast.Constant,                   # True literal (constant)
-    astnodes.UBNotOp: ast.Invert,                      # Bitwise NOT operator
-    astnodes.ULNotOp: ast.Not,                         # Logical NOT operator
-    astnodes.ULengthOP: ast.Call,                      # Length operator (len() call in Python)
-    astnodes.UMinusOp: ast.USub,                       # Unary minus operator
-    astnodes.UnaryOp: ast.UnaryOp,                     # Unary operation
-    astnodes.Varargs: ast.Starred,                     # Varargs (`...` or starred expression)
-    astnodes.While: ast.While,                       # While loop
-    Require:ast.Import
-}
-
-lua_to_python_operators = {
-    '+': '+',               # Addition
-    '-': '-',               # Subtraction
-    '*': '*',               # Multiplication
-    '/': '/',               # Division
-    '%': '%',               # Modulo
-    '^': '**',              # Exponentiation
-    '//': '//',             # Floor division
-
-    '==': '==',             # Equality
-    '~=': '!=',             # Inequality
-    '<': '<',               # Less than
-    '<=': '<=',             # Less than or equal to
-    '>': '>',               # Greater than
-    '>=': '>=',             # Greater than or equal to
-
-    'and': 'and',           # Logical AND
-    'or': 'or',             # Logical OR
-    'not': 'not',           # Logical NOT
-
-    '&': '&',               # Bitwise AND
-    '|': '|',               # Bitwise OR
-    '~': '^',               # Bitwise XOR
-    '<<': '<<',             # Left shift
-    '>>': '>>',             # Right shift
-    '~': '~',               # Bitwise NOT
-
-    '..': '+',              # String concatenation
-    '#': 'len'              # Length of table or string
-}
-node_map = {
-    astnodes.Block: ast.Module,  # Top-level structure for both
-    astnodes.Assign: ast.Assign,  # Variable assignment
-    astnodes.LocalAssign: ast.Assign,  # Local variable assignment in Lua
-    astnodes.Function:[ast.FunctionDef, ast.AsyncFunctionDef],  # Function definition
-    astnodes.LocalFunction:[ast.FunctionDef, ast.AsyncFunctionDef],  # Local function definition
-    astnodes.Table: ast.Dict,  # Tables in Lua similar to dictionaries in Python
-    astnodes.If: ast.If,  # Conditional statements
-    astnodes.Fornum: ast.For,  # Numeric for loop in Lua to for loop in Python
-    astnodes.Forin: ast.For,  # Generic for loop in Lua to for loop in Python
-    astnodes.While: ast.While,  # While loop
-    astnodes.Repeat: ast.While,  # Repeat-until loop in Lua to while loop in Python
-    astnodes.Call: ast.Call,  # Function call
-    astnodes.Return: ast.Return,  # Return statement
-    astnodes.BinaryOp: ast.BinOp,  # Binary operations
-    astnodes.UnaryOp: ast.UnaryOp,  # Unary operations
-    astnodes.Name: ast.Name,  # Identifiers
-    astnodes.Index: ast.Subscript,  # Indexing in Lua tables to subscripting in Python
-    astnodes.Do: None,  # Do statements for expression execution
-    astnodes.Break: ast.Break,  # Break statement in loops
-    astnodes.String: ast.Constant,  # Literal values
-    astnodes.Table: ast.Dict,  # Key-value pairs in Lua tables
-    astnodes.Field: [ast.List, ast.Dict, ast.Constant, ast.Call, ast.Name, ast.Tuple],  # Values in Lua tables
-    astnodes.AnonymousFunction: ast.Lambda,  # Anonymous functions
-    astnodes.Varargs: ast.Starred,  # Vararg expressions similar to starred expressions
-    astnodes.Comment: None,  # Comments are ignored in the AST
-    astnodes.Label: None,  # Labels for gotos (no direct Python equivalent)
-    astnodes.Goto:None,  # Goto statements (no direct Python equivalent)
-    astnodes.While: ast.While  # Repeat-until loop (mapped to while with condition inversion)
-}
 
 
-def make_Expression(node: astnodes.Expression):
-    #  start here
-    possible = []
-    for st in get_subtype(node):
+def make_Expression(node: astnodes.Expression, tnodes: list=total_nodes):
+    tnodes.append(astnodes.Expression)
+    if node == None:
+        return ""
+    tk = tokey(node)
+    f = node_function_map[tk]
+    retv = f(node)
+    return retv
+
+def panic(node: astnodes.Node, tnodes: list=total_nodes):
+    tnodes.append(astnodes.Node)
+    print(f"Panic Started: {node}")
+    try:
+        x = make_Number(node)
+        print("RESOLVED NUMBER")
+        return x
+    except:
+        pass
+    try:
+        x = make_Table(node)
+        print("RESOLVED Table")
+        return x
+    except: 
+        pass
+    
+    for n in all_nodes:
+        k = tokey(n)
         try:
-            x = node_function_map[st](node)
-            return x  
+            x= node_function_map[k](node)
+            print(f"Panic Resolve {x}")
+            if x == None:
+                return ""
+            return x
         except:
             pass
+    print("PANIC AMPLIFIED - not a Node")
+    try:
+        x = make_either(node)
+        print(f"Panic Resolved - {x}")
+        return x
+    except:
+        print("PANIC FAILED")
+        raise Exception(f"Panic Failed....\n{k} \n{node}")
 
-def make_Statement(node: astnodes.Statement):
-    for st in get_subtype(node):
-        try:
-            x = node_function_map[st](node)
-            return x  
-        except:
-            pass
+def make_Statement(node: astnodes.Statement, tnodes: list=total_nodes):
+    tnodes.append(astnodes.Statement)
 
-def make_AddOp(node: astnodes.Node) -> str:
+    tnodes.append(astnodes.Statement)
+    if node == None:
+        return "? None"
+    sbtypes = get_subtype(tokey(node))
+    if sbtypes != None:
+        for st in sbtypes:
+            try:
+                x = node_function_map[tokey(st)](node)
+                return x  
+            except:
+                pass
+    return panic(node)
+    
+def make_either(node: astnodes.Expression, tnodes: list=total_nodes|astnodes.Statement):
+    tnodes.append(astnodes.Expression)
+
+    try:
+        x = make_Expression(node)
+        if x == None or x == "":
+            try:
+                return make_Statement(node)
+            except:
+                return panic(node)
+        return x
+    except:
+        pass
+    try:
+        return make_Statement(node)
+    except:
+        panic(node)
+
+def make_AddOp(node: astnodes.Node, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Node)
+
+    tnodes.append(astnodes.AddOp)
     return "+"
-    
-def make_AndLoOp(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return "and"
-    
-def make_AnonymousFunction(node: astnodes.AnonymousFunction) -> str:
+
+def make_AndLoOp(node: astnodes.AndLoOp, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.AndLoOp)
+
+    tnodes.append(astnodes.AndLoOp)
+    return f"{make_either(node.left)} and {make_either(node.right)}"
+
+def make_AnonymousFunction(node: astnodes.AnonymousFunction, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.AnonymousFunction)
     return f"lambda: {node.display_name}"
-    
-def make_Assign(node: astnodes.Assign) -> str:
-    return f"{node.display_name} = "
-    
-def make_BAndOp(node: astnodes.BAndOp) -> str:
-    return "||"
-    
-def make_BOrOp(node: astnodes.BOrOp) -> str:
+
+def make_Assign(node: astnodes.Assign, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Assign)
+    return f"{make_Namelist(node.targets)} = {make_Namelist(node.values)}"
+
+def make_BAndOp(node: astnodes.BAndOp, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.BAndOp)
+    return "&"
+
+def make_BOrOp(node: astnodes.BOrOp, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.BOrOp)
     return "|"
-    
-def make_BShiftLOp(node: astnodes.Node) -> str:
+
+def make_BShiftLOp(node: astnodes.BShiftLOp, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.BShiftLOp)
     return "<<"
-    
-def make_BShiftROp(node: astnodes.Node) -> str:
+
+def make_BShiftROp(node: astnodes.BShiftROp, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.BShiftROp)
     return ">>"
-    
-def make_BXorOp(node: astnodes.Node) -> str:
+
+def make_BXorOp(node: astnodes.BXorOp, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.BXorOp)
     return "^"
 
-def make_Block(node: astnodes.Block) -> str:
+def make_Block(node: astnodes.Block, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Block)
     collection = []
     for x in node.body:
         collection.append(transform_lua_node(x))
     return collection
-    
-def make_Break(node: astnodes.Node) -> str:
+
+def make_Break(node: astnodes.Break, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Break)
     return "break"
-    
-def make_Call(node: astnodes.Call) -> str:
+
+def make_Call(node: astnodes.Call, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Call)
     argstr = ", ".join([make_Expression(arg) for arg in node.args])
-    return f"{node.func.display_name}({argstr})"
-    
-def make_Chunk(node: astnodes.Chunk) -> str:
+    return f"{make_Expression(node.func)}({argstr})"
+
+def make_Chunk(node: astnodes.Chunk, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Chunk)
     collection = []
     for n in node.body:
         collection.append(transform_lua_node(n))
     return collection
-    
-def make_Comment(node: astnodes.Comment) -> str:
-    return f"# {node.s[2:]}"
-    
-def make_Concat(node: astnodes.Node) -> str:
-    return "+"
-    
-def make_Do(node: astnodes.Node) -> str:
-    return ""
-    
-def make_Dots(node: astnodes.Node) -> str:
-    return "..."
-    
-def make_ElseIf(node: astnodes.Node) -> str:
-    return "elif"
-    
-def make_EqToOp(node: astnodes.Node) -> str:
-    return "=="
-    
-def make_ExpoOp(node: astnodes.ExpoOp) -> str:
-    return "^"
-    
-def make_Field(node: astnodes.Field) -> str:
-    if node.between_brackets == True:
-        return f"{node.key} = {node.value},"
-    return node.display_name
 
-def make_FloatDivOp(node: astnodes.Node) -> str:
+def make_Comment(node: astnodes.Comment, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Comment)
+    return f"# {node.s[2:]}"
+
+def make_Concat(node: astnodes.Node, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Node)
+    return "+"
+
+def make_Do(node: astnodes.Node, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Node)
+    return ""
+
+def make_Dots(node: astnodes.Node, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Node)
+    return "..."
+
+def make_ElseIf(node: astnodes.Node, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Node)
+    return "elif"
+
+def make_EqToOp(node: astnodes.Node, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Node)
+    return "=="
+
+def make_ExpoOp(node: astnodes.ExpoOp, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.ExpoOp)
+    return "**"
+
+def make_FieldValue(node: astnodes.Field, tnodes: list=total_nodes):
+    tnodes.append(astnodes.Field)
+    return make_Expression(node)
+
+def make_Field(node: astnodes.Field, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Field)
+    if isinstance(node.key, astnodes.Number):
+        kk = make_Number(node.key)
+        return f"'{kk}' : {make_FieldValue(node.value)},"
+    else:
+        kk = node.key
+        return f"'{kk.id}' : {make_FieldValue(node.value)},"
+
+
+def make_FloatDivOp(node: astnodes.Node, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Node)
     return "/"
-    
-def make_FloorDivOp(node: astnodes.Node) -> str:
+
+def make_FloorDivOp(node: astnodes.Node, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Node)
     return "//"
-    
-def make_Forin(node: astnodes.Forin) -> str:
+
+def make_Forin(node: astnodes.Forin, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Forin)
     targets = ", ".join([make_Name(x) for x in node.targets])
     tag = f"for {targets} in {node.display_name}:"
     bb = [make_Expression(x) for x in node.body]
     return tag + "\n\t".join(bb)
-    
-def make_Fornum(node: astnodes.Fornum) -> str:
+
+def make_Fornum(node: astnodes.Fornum, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Fornum)
     try:
         s = make_Expression(node.step)
         s = f"{s},"
@@ -271,224 +226,290 @@ def make_Fornum(node: astnodes.Fornum) -> str:
     bb = [make_Expression(x) for x in node.body]
     return tag + "\n\t".join(bb)
 
-def make_Namelist(nodes: list[astnodes.Expression]) -> str:
-    return ", ".join([make_Expression(node) for node in nodes])
-
-def make_Body(node: astnodes.Function|astnodes.Call|astnodes.AnonymousFunction|
+def make_Body(node: astnodes.Function, tnodes: list=total_nodes|astnodes.Call|astnodes.AnonymousFunction|
               astnodes.Do|astnodes.ElseIf|astnodes.Forin|astnodes.Fornum|astnodes.If|
               astnodes.Invoke|astnodes.LocalFunction|astnodes.Method):
-    return [transform_lua_node(x) for x in node.body]
+    retv = []
+    indent = 1
+    for x in node.body:
+        y = [make_Expression(x)]
+        for i in range(0, indent):
+            y.insert(0, "    ")
+        if y[-1].strip().endswith(":"):
+            indent+=1
+        retv.append("".join(y))
+    return retv 
 
-def make_Function(node: astnodes.Function) -> str:
+def make_Function(node: astnodes.Function, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Function)
     tag = f"def {make_Name(node.name)}({make_Namelist(node.args)}):"
     return tag + '\n' "\n\t".join([make_Body(node)])
-    
-def make_Goto(node: astnodes.Goto) -> str:
-    pyeqv = lua_to_python_node[node]
+
+def make_Goto(node: astnodes.Goto, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Goto)
     return "<NOT IMPLEMENTED>"
-    
-def make_GreaterOrEqThanOp(node: astnodes.GreaterOrEqThanOp) -> str:
-    return make_Expression(node.left) + " >= " + make_Expression(node.right)
-    
-def make_GreaterThanOp(node: astnodes.GreaterThanOp) -> str:
+
+def make_GreaterOrEqThanOp(node: astnodes.GreaterOrEqThanOp, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.GreaterOrEqThanOp)
+    return make_either(node.left) + " >= " + make_either(node.right)
+
+def make_GreaterThanOp(node: astnodes.GreaterThanOp, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.GreaterThanOp)
     return " > "
-    
-def make_If(node: astnodes.If) -> str:
+
+def make_If(node: astnodes.If, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.If)
     tag = f"if {make_Expression(node.test)}:"
     body = make_Body(node.body)
     other = make_Expression(node.orelse)
-    return f"{tag}\n\t{'\n\t'.join(body)}{other}"
-    
-def make_Index(node: astnodes.Index) -> str:
-    return f"{node.display_name}[{make_Expression(node.idx)}]"
-    
-def make_Invoke(node: astnodes.Invoke) -> str:
-    args = make_Namelist(node.args)
-    s = make_Expression(node.source)
-    return f"\tdef {node.func.display_name}(self, {args}):"
-    
-def make_Label(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
+    return f"{tag}\n{"\n".join(body)}{other}"
+
+def make_Index(node: astnodes.Index, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Index)
+    return f"{make_Expression(node.value)}.{make_Expression(node.idx)}"
+
+def make_Invoke(node: astnodes.Invoke, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Invoke)
+    return ":"
+
+def make_Label(node: astnodes.Node, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Node)
     return "<NOT IMPLEMENTED (make_Label)>"
-    
-def make_LessOrEqThanOp(node: astnodes.LessOrEqThanOp) -> str:
+
+def make_LessOrEqThanOp(node: astnodes.LessOrEqThanOp, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.LessOrEqThanOp)
     return ">="
-    
-def make_LessThanOp(node: astnodes.LessThanOp) -> str:
+
+def make_LessThanOp(node: astnodes.LessThanOp, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.LessThanOp)
     return "<"
-    
-def make_Lhs(node: astnodes.Lhs) -> str:
+
+def make_Lhs(node: astnodes.Lhs, tnodes: list=total_nodes) -> str:
+    total_nodes.append(astnodes.Lhs)
     return f"<NOT IMPLEMENTED (make_Lhs) [{node.display_name}]>"
 
-def make_LocalAssign(node: astnodes.Node) -> str:
+def make_LocalAssign(node: astnodes.LocalAssign, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.LocalAssign)
     return make_Assign(node)
-    
-def make_LocalFunction(node: astnodes.Node) -> str:
+
+def make_LocalFunction(node: astnodes.Node, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Node)
     return make_Function(node)
-    
-def make_Method(node: astnodes.Method) -> str:
-    return make_Invoke(node)
-    
-def make_ModOp(node: astnodes.Node) -> str:
+
+def make_Method(node: astnodes.Method, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Method)
+    nl = make_Namelist(node.args)
+    s = ", "
+    if nl == "":
+        s = ""
+    tag = f"def {make_Name(node.name)}(self{s}{make_Namelist(node.args)}):"
+    bb = "\n".join(make_Body(node.body))
+    return f"{tag}\n{bb}\n"
+
+def make_ModOp(node: astnodes.Node, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Node)
     return "%"
-    
-def make_MultOp(node: astnodes.Node) -> str:
+
+def make_MultOp(node: astnodes.Node, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Node)
     return "*"
-    
-def make_Name(node: astnodes.Node) -> str:
-    return f"{node.display_name}"
-    
-def make_Nil(node: astnodes.Node) -> str:
+
+def make_Name(node: astnodes.Name, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Name)
+    return f"{node.id}"
+
+def make_Namelist(nodes: list[astnodes.Expression]) -> str:
+    items = []
+    if isinstance(nodes, bool):
+        return str(nodes)
+    for item in nodes:
+        x = make_Expression(item)
+        items.append(x)
+    return ", ".join(items)
+
+def make_Nil(node: astnodes.Node, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Node)
     return "None"
-       
-def make_NotEqToOp(node: astnodes.NotEqToOp) -> str:
+
+def make_NotEqToOp(node: astnodes.NotEqToOp, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.NotEqToOp)
     return "!="
-    
-def make_Number(node: astnodes.Number) -> str:
-    return f"{make_Expression(node)}"
-    
-def make_OrLoOp(node: astnodes.OrLoOp) -> str:
-    return  "|"
-    
-def make_Repeat(node: astnodes.Repeat) -> str:
+
+def make_Number(node: astnodes.Number, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Number)
+    return node.n
+    try:
+        x = make_Expression(node)
+        return x
+    except:
+        x= make_Expression(node)
+        return x
+
+def make_OrLoOp(node: astnodes.OrLoOp, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.OrLoOp)
+    l = make_either(node.left)
+    print("left", l, f"\n{node.left}")
+    r = make_either(node.right)
+    return  f"{str(l)} if {str(l)}  else {str(r)}"
+
+def make_Repeat(node: astnodes.Repeat, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Repeat)
     return f"<NOT IMPLEMENTED (make_Repeat)>"
-    
-def make_Return(node: astnodes.Return) -> str:
+
+def make_Return(node: astnodes.Return, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Return)
     return f"return {make_Namelist(node.values)}"
-    
-def make_SemiColon(node: astnodes.SemiColon) -> str:
+
+def make_SemiColon(node: astnodes.SemiColon, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.SemiColon)
     return ";"
-    
-def make_Statement(node: astnodes.Node) -> str:
-    for sc in get_subtype(node):
-        try:
-            return node_function_map[sc](node)
-        except:
-            pass
-    return ""
-    
-def make_String(node: astnodes.String) -> str:
+
+def make_String(node: astnodes.String, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.String)
     return f'"{node.s}"'
-    
-def make_SubOp(node: astnodes.SubOp) -> str:
-    return "-"
-    
-def make_Table(node: astnodes.Table) -> str:
+
+def make_SubOp(node: astnodes.SubOp, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.SubOp)
+    return f"{make_either(node.left)} - {make_either(node.right)}"
+
+def make_Table(node: astnodes.Table, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Table)
     rbracket = "{"
     lbracket = "}"
-    tag = f"{node.display_name} = {rbracket}\t"
-    fs = ",\n\t".join([make_Field(x) for x in node.fields])
+    tag = f"{rbracket}\n\t\t"
+    fs = ",\n\t\t".join([make_Field(x) for x in node.fields])
     return f"{tag}{fs}\n\t{lbracket}"
-    
-def make_TrueExpr(node: astnodes.TrueExpr) -> str:
-    return f"<Not Implemented (make_TrueExpr) [{node.display_name}]>"
-    
-def make_UBNotOp(node: astnodes.UBNotOp) -> str:
-    return "!="
-    
-def make_ULNotOp(node: astnodes.ULNotOp) -> str:
-    return "not"
-    
-def make_ULengthOP(node: astnodes.ULengthOP) -> str:
+
+def make_TrueExpr(node: astnodes.TrueExpr, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.TrueExpr)
+    return f"True"
+
+def make_UBNotOp(node: astnodes.UBNotOp, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.UBNotOp)
+    return "~" + make_either(node.operand)
+
+def make_ULNotOp(node: astnodes.ULNotOp, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.ULNotOp)
+    return f"not({make_either(node.operand)})"
+
+def make_ULengthOP(node: astnodes.ULengthOP, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.ULengthOP)
     return f"len({node.display_name})"
-    
-def make_UMinusOp(node: astnodes.Node) -> str:
-    return "-"
-    
-def make_Varargs(node: astnodes.Varargs) -> str:
+
+def make_UMinusOp(node: astnodes.UMinusOp, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.UMinusOp)
+    return "-" + make_either(node.operand)
+
+def make_Varargs(node: astnodes.Varargs, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.Varargs)
     return f"<Not Implemented (make_Varargs) {node.display_name}>"
-    
-def make_While(node: astnodes.While) -> str:
+
+def make_While(node: astnodes.While, tnodes: list=total_nodes) -> str:
+    tnodes.append(astnodes.While)
     tag = "while True:"
     bb= "\n\t".join(make_Body(node))
     return f"{tag}\n\t{bb}"
-    
-def make_Require(node: Require) -> str:
-    return f"<Not Implemented (make_Require) {node}>"
-    
+
+
+def go(node):
+    return ""
+
 node_function_map = {
-    astnodes.AddOp:make_AddOp,
-    astnodes.AndLoOp:make_AndLoOp,
-    astnodes.AnonymousFunction:make_AnonymousFunction,
-    astnodes.Assign:make_Assign,
-    astnodes.BAndOp:make_BAndOp,
-    astnodes.BOrOp:make_BOrOp,
-    astnodes.BShiftLOp:make_BShiftLOp,
-    astnodes.BShiftROp:make_BShiftROp,
-    astnodes.BXorOp:make_BXorOp,
-    astnodes.Block:make_Block,
-    astnodes.Break:make_Break,
-    astnodes.Call:make_Call,
-    astnodes.Chunk:make_Chunk,
-    astnodes.Comment:make_Comment,
-    astnodes.Concat:make_Concat,
-    astnodes.Do:make_Do,
-    astnodes.Dots:make_Dots,
-    astnodes.ElseIf:make_ElseIf,
-    astnodes.EqToOp:make_EqToOp,
-    astnodes.ExpoOp:make_ExpoOp,
-    astnodes.Field:make_Field,
-    astnodes.FloatDivOp:make_FloatDivOp,
-    astnodes.FloorDivOp:make_FloorDivOp,
-    astnodes.Forin:make_Forin,
-    astnodes.Fornum:make_Fornum,
-    astnodes.Function:make_Function,
-    astnodes.Goto:make_Goto,
-    astnodes.GreaterOrEqThanOp:make_GreaterOrEqThanOp,
-    astnodes.GreaterThanOp:make_GreaterThanOp,
-    astnodes.If:make_If,
-    astnodes.Index:make_Index,
-    astnodes.Invoke:make_Invoke,
-    astnodes.Label:make_Label,
-    astnodes.LessOrEqThanOp:make_LessOrEqThanOp,
-    astnodes.LessThanOp:make_LessThanOp,
-    astnodes.Lhs:make_Lhs,
-    astnodes.LocalAssign:make_LocalAssign,
-    astnodes.LocalFunction:make_LocalFunction,
-    astnodes.Method:make_Method,
-    astnodes.ModOp:make_ModOp,
-    astnodes.MultOp:make_MultOp,
-    astnodes.Name:make_Name,
-    astnodes.Nil:make_Nil,
-    astnodes.NotEqToOp:make_NotEqToOp,
-    astnodes.Number:make_Number,
-    astnodes.OrLoOp:make_OrLoOp,
-    astnodes.Repeat:make_Repeat,
-    astnodes.Return:make_Return,
-    astnodes.SemiColon:make_SemiColon,
-    astnodes.Statement:make_Statement,
-    astnodes.String:make_String,
-    astnodes.SubOp:make_SubOp,
-    astnodes.Table:make_Table,
-    astnodes.TrueExpr:make_TrueExpr,
-    astnodes.UBNotOp:make_UBNotOp,
-    astnodes.ULNotOp:make_ULNotOp,
-    astnodes.ULengthOP:make_ULengthOP,
-    astnodes.UMinusOp:make_UMinusOp,
-    astnodes.Varargs:make_Varargs,
-    astnodes.While:make_While,
-    astnodes.Expression: make_Expression,
-    Require:make_Require,
+    'luaparser.astnodes.AddOp':make_AddOp,
+    'luaparser.astnodes.AndLoOp':make_AndLoOp,
+    'luaparser.astnodes.AnonymousFunction':make_AnonymousFunction,
+    'luaparser.astnodes.Assign':make_Assign,
+    'luaparser.astnodes.BAndOp':make_BAndOp,
+    'luaparser.astnodes.BOrOp':make_BOrOp,
+    'luaparser.astnodes.BShiftLOp':make_BShiftLOp,
+    'luaparser.astnodes.BShiftROp':make_BShiftROp,
+    'luaparser.astnodes.BXorOp':make_BXorOp,
+    'luaparser.astnodes.Block':make_Block,
+    'luaparser.astnodes.Break':make_Break,
+    'luaparser.astnodes.Call':make_Call,
+    'luaparser.astnodes.Chunk':make_Chunk,
+    'luaparser.astnodes.Comment':make_Comment,
+    'luaparser.astnodes.Concat':make_Concat,
+    'luaparser.astnodes.Do':make_Do,
+    'luaparser.astnodes.Dots':make_Dots,
+    'luaparser.astnodes.ElseIf':make_ElseIf,
+    'luaparser.astnodes.EqToOp':make_EqToOp,
+    'luaparser.astnodes.ExpoOp':make_ExpoOp,
+    'luaparser.astnodes.Field':make_Field,
+    'luaparser.astnodes.FloatDivOp':make_FloatDivOp,
+    'luaparser.astnodes.FloorDivOp':make_FloorDivOp,
+    'luaparser.astnodes.Forin':make_Forin,
+    'luaparser.astnodes.Fornum':make_Fornum,
+    'luaparser.astnodes.Function':make_Function,
+    'luaparser.astnodes.Goto':make_Goto,
+    'luaparser.astnodes.GreaterOrEqThanOp':make_GreaterOrEqThanOp,
+    'luaparser.astnodes.GreaterThanOp':make_GreaterThanOp,
+    'luaparser.astnodes.If':make_If,
+    'luaparser.astnodes.Index':make_Index,
+    'luaparser.astnodes.Invoke':make_Invoke,
+    'luaparser.astnodes.Label':make_Label,
+    'luaparser.astnodes.LessOrEqThanOp':make_LessOrEqThanOp,
+    'luaparser.astnodes.LessThanOp':make_LessThanOp,
+    'luaparser.astnodes.Lhs':make_Lhs,
+    'luaparser.astnodes.LocalAssign':make_LocalAssign,
+    'luaparser.astnodes.LocalFunction':make_LocalFunction,
+    'luaparser.astnodes.Method':make_Method,
+    'luaparser.astnodes.ModOp':make_ModOp,
+    'luaparser.astnodes.MultOp':make_MultOp,
+    'luaparser.astnodes.Name':make_Name,
+    'luaparser.astnodes.Nil':make_Nil,
+    'luaparser.astnodes.NotEqToOp':make_NotEqToOp,
+    'luaparser.astnodes.Number':make_Number,
+    'luaparser.astnodes.OrLoOp':make_OrLoOp,
+    'luaparser.astnodes.Repeat':make_Repeat,
+    'luaparser.astnodes.Return':make_Return,
+    'luaparser.astnodes.SemiColon':make_SemiColon,
+    'luaparser.astnodes.Statement':make_Statement,
+    'luaparser.astnodes.String':make_String,
+    'luaparser.astnodes.SubOp':make_SubOp,
+    'luaparser.astnodes.Table':make_Table,
+    'luaparser.astnodes.TrueExpr':make_TrueExpr,
+    'luaparser.astnodes.UBNotOp':make_UBNotOp,
+    'luaparser.astnodes.ULNotOp':make_ULNotOp,
+    'luaparser.astnodes.ULengthOP':make_ULengthOP,
+    'luaparser.astnodes.UMinusOp':make_UMinusOp,
+    'luaparser.astnodes.Varargs':make_Varargs,
+    'luaparser.astnodes.While':make_While,
+    'luaparser.astnodes.Expression': make_Expression,
+    'type':make_either,
+    "enum.EnumType":go
+
 }
 
-lua_operators = [astnodes.AddOp, astnodes.AndLoOp, astnodes.AriOp, astnodes.BAndOp, astnodes.BOrOp, astnodes.BShiftLOp, astnodes.BShiftROp, astnodes.BXorOp, astnodes.BinaryOp, astnodes.BitOp, astnodes.EqToOp, astnodes.ExpoOp, astnodes.FloatDivOp, astnodes.FloorDivOp, astnodes.GreaterOrEqThanOp, astnodes.GreaterThanOp, astnodes.LessOrEqThanOp, astnodes.LessThanOp, astnodes.LoOp, astnodes.ModOp, astnodes.MultOp, astnodes.NotEqToOp, astnodes.Op, astnodes.OrLoOp, astnodes.RelOp, astnodes.SubOp, astnodes.UBNotOp, astnodes.ULNotOp, astnodes.ULengthOP, astnodes.UMinusOp, astnodes.UnaryOp]
-
 def try_subtypes(node:astnodes.Node):
-    for x in get_subtype(node):
+    for item in get_subtype(node):
         try:
-            return transform_lua_node(x)
+            return node_function_map[item](node)
         except:
             pass
-    return "<NOT IMPLEMENT (try_subtypes)>"
+
+    try:
+        return make_either(node)
+    except:
+        panic(node)
+
+def tokey(node):
+    x = str(node.__class__)[8:-2]
+    return x
 
 def transform_lua_node(node: LUAAST) -> str:
-    try:
-        function = node_function_map[node]
-        return function(node)
-    except KeyError:
-        return try_subtypes(node)
 
+    tk = tokey(node)
+    function = node_function_map[tk]
+    s = function(node)
+    x = s.replace(r",,", r",")
+    return x
 
+def transform_nodes(nodes: list[astnodes.Node]):
+    global total_nodes
+    total_nodes = []
+    return [transform_lua_node(x) for x  in nodes]
 
-
-
+def get_total_nodes():
+    global total_nodes
+    return total_nodes
