@@ -13,7 +13,7 @@ finally:
     allow_local_modules()
 from luaparser.astnodes import Node
 from luaparser import astnodes
-from templates.lua import get_subtype
+from transform.lua import get_subtype, has_args, has_body, hasbody, hasargs
 
 
 class Require(Node):
@@ -157,7 +157,10 @@ node_map = {
     astnodes.While: ast.While  # Repeat-until loop (mapped to while with condition inversion)
 }
 
+
 def make_Expression(node: astnodes.Expression):
+    #  start here
+    possible = []
     for st in get_subtype(node):
         try:
             x = node_function_map[st](node)
@@ -211,9 +214,8 @@ def make_Break(node: astnodes.Node) -> str:
     return "break"
     
 def make_Call(node: astnodes.Call) -> str:
-    argstr = ", ".join([arg.display_name for arg in node.args])
+    argstr = ", ".join([make_Expression(arg) for arg in node.args])
     return f"{node.func.display_name}({argstr})"
-    
     
 def make_Chunk(node: astnodes.Chunk) -> str:
     collection = []
@@ -268,174 +270,142 @@ def make_Fornum(node: astnodes.Fornum) -> str:
     tag = f"for {node.target} in range({make_Expression(node.start)}{s}{make_Expression(node.stop)}):"
     bb = [make_Expression(x) for x in node.body]
     return tag + "\n\t".join(bb)
+
+def make_Namelist(nodes: list[astnodes.Expression]) -> str:
+    return ", ".join([make_Expression(node) for node in nodes])
+
+def make_Body(node: astnodes.Function|astnodes.Call|astnodes.AnonymousFunction|
+              astnodes.Do|astnodes.ElseIf|astnodes.Forin|astnodes.Fornum|astnodes.If|
+              astnodes.Invoke|astnodes.LocalFunction|astnodes.Method):
+    return [transform_lua_node(x) for x in node.body]
+
+def make_Function(node: astnodes.Function) -> str:
+    tag = f"def {make_Name(node.name)}({make_Namelist(node.args)}):"
+    return tag + '\n' "\n\t".join([make_Body(node)])
     
-def make_Function(node: astnodes.Node) -> str:
+def make_Goto(node: astnodes.Goto) -> str:
     pyeqv = lua_to_python_node[node]
-    return None
+    return "<NOT IMPLEMENTED>"
     
-def make_Goto(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+def make_GreaterOrEqThanOp(node: astnodes.GreaterOrEqThanOp) -> str:
+    return make_Expression(node.left) + " >= " + make_Expression(node.right)
     
-def make_GreaterOrEqThanOp(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+def make_GreaterThanOp(node: astnodes.GreaterThanOp) -> str:
+    return " > "
     
-def make_GreaterThanOp(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+def make_If(node: astnodes.If) -> str:
+    tag = f"if {make_Expression(node.test)}:"
+    body = make_Body(node.body)
+    other = make_Expression(node.orelse)
+    return f"{tag}\n\t{'\n\t'.join(body)}{other}"
     
-def make_If(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+def make_Index(node: astnodes.Index) -> str:
+    return f"{node.display_name}[{make_Expression(node.idx)}]"
     
-def make_Index(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
-    
-def make_Invoke(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+def make_Invoke(node: astnodes.Invoke) -> str:
+    args = make_Namelist(node.args)
+    s = make_Expression(node.source)
+    return f"\tdef {node.func.display_name}(self, {args}):"
     
 def make_Label(node: astnodes.Node) -> str:
     pyeqv = lua_to_python_node[node]
-    return None
+    return "<NOT IMPLEMENTED (make_Label)>"
     
-def make_LessOrEqThanOp(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+def make_LessOrEqThanOp(node: astnodes.LessOrEqThanOp) -> str:
+    return ">="
     
-def make_LessThanOp(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+def make_LessThanOp(node: astnodes.LessThanOp) -> str:
+    return "<"
     
-def make_Lhs(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
-    
-def make_LoOp(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
-    
+def make_Lhs(node: astnodes.Lhs) -> str:
+    return f"<NOT IMPLEMENTED (make_Lhs) [{node.display_name}]>"
+
 def make_LocalAssign(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+    return make_Assign(node)
     
 def make_LocalFunction(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+    return make_Function(node)
     
-def make_Method(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+def make_Method(node: astnodes.Method) -> str:
+    return make_Invoke(node)
     
 def make_ModOp(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+    return "%"
     
 def make_MultOp(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+    return "*"
     
 def make_Name(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+    return f"{node.display_name}"
     
 def make_Nil(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+    return "None"
+       
+def make_NotEqToOp(node: astnodes.NotEqToOp) -> str:
+    return "!="
     
-def make_Node(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+def make_Number(node: astnodes.Number) -> str:
+    return f"{make_Expression(node)}"
     
-def make_NotEqToOp(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+def make_OrLoOp(node: astnodes.OrLoOp) -> str:
+    return  "|"
     
-def make_Number(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+def make_Repeat(node: astnodes.Repeat) -> str:
+    return f"<NOT IMPLEMENTED (make_Repeat)>"
     
-def make_Op(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+def make_Return(node: astnodes.Return) -> str:
+    return f"return {make_Namelist(node.values)}"
     
-def make_OrLoOp(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
-    
-def make_RelOp(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
-    
-def make_Repeat(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
-    
-def make_Return(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
-    
-def make_SemiColon(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+def make_SemiColon(node: astnodes.SemiColon) -> str:
+    return ";"
     
 def make_Statement(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+    for sc in get_subtype(node):
+        try:
+            return node_function_map[sc](node)
+        except:
+            pass
+    return ""
     
-def make_String(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+def make_String(node: astnodes.String) -> str:
+    return f'"{node.s}"'
     
-def make_SubOp(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+def make_SubOp(node: astnodes.SubOp) -> str:
+    return "-"
     
-def make_Table(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+def make_Table(node: astnodes.Table) -> str:
+    rbracket = "{"
+    lbracket = "}"
+    tag = f"{node.display_name} = {rbracket}\t"
+    fs = ",\n\t".join([make_Field(x) for x in node.fields])
+    return f"{tag}{fs}\n\t{lbracket}"
     
-def make_TrueExpr(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+def make_TrueExpr(node: astnodes.TrueExpr) -> str:
+    return f"<Not Implemented (make_TrueExpr) [{node.display_name}]>"
     
-def make_UBNotOp(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+def make_UBNotOp(node: astnodes.UBNotOp) -> str:
+    return "!="
     
-def make_ULNotOp(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+def make_ULNotOp(node: astnodes.ULNotOp) -> str:
+    return "not"
     
-def make_ULengthOP(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+def make_ULengthOP(node: astnodes.ULengthOP) -> str:
+    return f"len({node.display_name})"
     
 def make_UMinusOp(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+    return "-"
     
-def make_UnaryOp(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+def make_Varargs(node: astnodes.Varargs) -> str:
+    return f"<Not Implemented (make_Varargs) {node.display_name}>"
     
-def make_Varargs(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+def make_While(node: astnodes.While) -> str:
+    tag = "while True:"
+    bb= "\n\t".join(make_Body(node))
+    return f"{tag}\n\t{bb}"
     
-def make_While(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
+def make_Require(node: Require) -> str:
+    return f"<Not Implemented (make_Require) {node}>"
     
-def make_Require(node: astnodes.Node) -> str:
-    pyeqv = lua_to_python_node[node]
-    return None
-    
-
-
-
 node_function_map = {
     astnodes.AddOp:make_AddOp,
     astnodes.AndLoOp:make_AndLoOp,
@@ -473,7 +443,6 @@ node_function_map = {
     astnodes.LessOrEqThanOp:make_LessOrEqThanOp,
     astnodes.LessThanOp:make_LessThanOp,
     astnodes.Lhs:make_Lhs,
-    astnodes.LoOp:make_LoOp,
     astnodes.LocalAssign:make_LocalAssign,
     astnodes.LocalFunction:make_LocalFunction,
     astnodes.Method:make_Method,
@@ -481,12 +450,9 @@ node_function_map = {
     astnodes.MultOp:make_MultOp,
     astnodes.Name:make_Name,
     astnodes.Nil:make_Nil,
-    astnodes.Node:make_Node,
     astnodes.NotEqToOp:make_NotEqToOp,
     astnodes.Number:make_Number,
-    astnodes.Op:make_Op,
     astnodes.OrLoOp:make_OrLoOp,
-    astnodes.RelOp:make_RelOp,
     astnodes.Repeat:make_Repeat,
     astnodes.Return:make_Return,
     astnodes.SemiColon:make_SemiColon,
@@ -499,7 +465,6 @@ node_function_map = {
     astnodes.ULNotOp:make_ULNotOp,
     astnodes.ULengthOP:make_ULengthOP,
     astnodes.UMinusOp:make_UMinusOp,
-    astnodes.UnaryOp:make_UnaryOp,
     astnodes.Varargs:make_Varargs,
     astnodes.While:make_While,
     astnodes.Expression: make_Expression,
@@ -508,16 +473,20 @@ node_function_map = {
 
 lua_operators = [astnodes.AddOp, astnodes.AndLoOp, astnodes.AriOp, astnodes.BAndOp, astnodes.BOrOp, astnodes.BShiftLOp, astnodes.BShiftROp, astnodes.BXorOp, astnodes.BinaryOp, astnodes.BitOp, astnodes.EqToOp, astnodes.ExpoOp, astnodes.FloatDivOp, astnodes.FloorDivOp, astnodes.GreaterOrEqThanOp, astnodes.GreaterThanOp, astnodes.LessOrEqThanOp, astnodes.LessThanOp, astnodes.LoOp, astnodes.ModOp, astnodes.MultOp, astnodes.NotEqToOp, astnodes.Op, astnodes.OrLoOp, astnodes.RelOp, astnodes.SubOp, astnodes.UBNotOp, astnodes.ULNotOp, astnodes.ULengthOP, astnodes.UMinusOp, astnodes.UnaryOp]
 
+def try_subtypes(node:astnodes.Node):
+    for x in get_subtype(node):
+        try:
+            return transform_lua_node(x)
+        except:
+            pass
+    return "<NOT IMPLEMENT (try_subtypes)>"
+
 def transform_lua_node(node: LUAAST) -> str:
     try:
         function = node_function_map[node]
         return function(node)
     except KeyError:
-        print(type(node))
-        print("ERROR TRANSFORMING!!!!!")
-        raise Exception(f"ERROR transforming this node {node}")
-    
-
+        return try_subtypes(node)
 
 
 
