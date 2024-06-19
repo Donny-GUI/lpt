@@ -1,7 +1,5 @@
 import ast
-from luaparser.astnodes import *
-from utility.source import astnodes
-import os
+from util.source import python_ast_path
 
-astns = astnodes()
-print(astns)
+print(python_ast_path())
+

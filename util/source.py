@@ -2,6 +2,10 @@ import ast
 from ast import ClassDef
 import os
 
+def python_ast_path():
+    a = os.path.abspath(ast)
+    b = os.path.realpath(ast)
+    return a, b 
 
 def luaastpath():
     return os.path.join(os.getcwd(), "luaparser", "astnodes.py")
