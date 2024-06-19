@@ -1,6 +1,15 @@
 import ast
+from ast import ClassDef
 import os
 
+
+def luaastpath():
+    return os.path.join(os.getcwd(), "luaparser", "astnodes.py")
+
+def astnodes():
+    classes = get_all_classes(luaastpath())
+    names = [c.name for c in classes]
+    return names
 
 def is_python_file(filepath):
     if filepath.endswith(".py"):
@@ -16,9 +25,11 @@ def is_python_file(filepath):
             return False
     return False
 
-def get_all_classes(filepath:str) -> list[ast.ClassDef]:
+def get_all_classes(filepath:str) -> list[ClassDef]:
     with open(filepath, "r") as f:
         content = f.read()
     tree = ast.parse(content)
     return [node for node in ast.walk(tree) if isinstance(node, ast.ClassDef) == True]
 
+astns = astnodes()
+print(astns)
