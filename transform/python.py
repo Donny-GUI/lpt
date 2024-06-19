@@ -191,6 +191,8 @@ def make_Field(node: astnodes.Field, tnodes: list=total_nodes) -> str:
         return f"'{kk}' : {make_FieldValue(node.value)},"
     else:
         kk = node.key
+        if isinstance(kk, astnodes.String):
+            return f"'{kk.s}' : {make_FieldValue(node.value)},"    
         return f"'{kk.id}' : {make_FieldValue(node.value)},"
 
 def make_FloatDivOp(node: astnodes.Node, tnodes: list=total_nodes) -> str:
@@ -219,7 +221,10 @@ def make_Fornum(node: astnodes.Fornum, tnodes: list=total_nodes) -> str:
     except:
         s = ""
     tag = f"for {node.target} in range({make_Expression(node.start)}{s}{make_Expression(node.stop)}):"
-    bb = [make_Expression(x) for x in node.body]
+    try:
+        bb = [make_Expression(x) for x in node.body]
+    except:
+        bb = [make_Expression(x) for x in node.body.body]
     return tag + "\n\t".join(bb)
 
 def make_Body(node: astnodes.Function|astnodes.Call|astnodes.AnonymousFunction|
@@ -227,19 +232,30 @@ def make_Body(node: astnodes.Function|astnodes.Call|astnodes.AnonymousFunction|
               astnodes.Invoke|astnodes.LocalFunction|astnodes.Method):
     retv = []
     indent = 1
-    for x in node.body:
+    nbi = node.body
+
+    if isinstance(nbi, astnodes.Block):
+        nbi = node.body.body
+
+    for x in nbi:
         y = [make_Expression(x)]
+
         for i in range(0, indent):
             y.insert(0, "    ")
+
         if y[-1].strip().endswith(":"):
             indent+=1
+
         retv.append("".join(y))
     return retv 
 
 def make_Function(node: astnodes.Function, tnodes: list=total_nodes) -> str:
     tnodes.append([astnodes.Function, node])
     tag = f"def {make_Name(node.name)}({make_Namelist(node.args)}):"
-    return tag + '\n' "\n\t".join([make_Body(node)])
+    try:
+        return tag + '\n' + "\n\t".join([make_Body(node)])
+    except:
+        return tag + '\n' + "\n\t".join(make_Body(node))
 
 def make_Goto(node: astnodes.Goto, tnodes: list=total_nodes) -> str:
     tnodes.append([astnodes.Goto, node])
@@ -310,6 +326,8 @@ def make_MultOp(node: astnodes.MultOp, tnodes: list=total_nodes) -> str:
 
 def make_Name(node: astnodes.Name, tnodes: list=total_nodes) -> str:
     tnodes.append([astnodes.Name, node])
+    if isinstance(node, astnodes.Index):
+        return node.idx.id
     return f"{node.id}"
 
 def make_Namelist(nodes: list[astnodes.Expression]) -> str:

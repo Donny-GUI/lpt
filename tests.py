@@ -5,12 +5,14 @@ from tools.file import get_files_by_extension
 from tools.path import desktop_path
 from transform.python import transform_lua_node, get_total_nodes
 from tools.symbols import LARROWS, RARROWS, NODE, RESULT
+from tools.file import force_open
+
+
+
 
 
 def read_lua(filepath:str):
-    with open(filepath, "r") as r:
-        content = r.read()
-    return content
+    return force_open(filepath)
 
 def string_to_nodes(string):
     nodes = parse(string)
@@ -32,7 +34,7 @@ def test_transform():
         for node in file_to_nodes(file):
             printtest(f"{NODE}{node}")
             n = transform_lua_node(node)
-            printtest(f"{RESULT} \n{L}\n{n}\n{R}")
+            printtest(f"{RESULT} \n{LARROWS}\n{n}\n{RARROWS}")
 
 
 def printtest(obj):
