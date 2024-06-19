@@ -6,6 +6,7 @@ from tools.path import desktop_path
 from transform.python import transform_lua_node, get_total_nodes
 from tools.symbols import LARROWS, RARROWS, NODE, RESULT
 from tools.file import force_open
+import time
 
 
 
@@ -31,10 +32,10 @@ def transpile_lua(filepath:str):
 def test_transform():
     for file in get_files_by_extension(desktop_path, ".lua"):
         printtest(file)
+        t  = time.time()
         for node in file_to_nodes(file):
-            printtest(f"{NODE}{node}")
             n = transform_lua_node(node)
-            printtest(f"{RESULT} \n{LARROWS}\n{n}\n{RARROWS}")
+        print("Total Time: ", str(time.time()-t))
 
 
 def printtest(obj):
