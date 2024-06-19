@@ -18,17 +18,17 @@ LUAAST = Node
 
 
 def make_Expression(node: astnodes.Expression, tnodes: list=total_nodes):
-    tnodes.append(astnodes.Expression)
+    tnodes.append([astnodes.Expression, node])
     if node == None:
         return ""
     tk = tokey(node)
     f = node_function_map[tk]
     retv = f(node)
-    return retv
+    return str(retv)
 
 def panic(node: astnodes.Node, tnodes: list=total_nodes):
-    tnodes.append(astnodes.Node)
-    print(f"Panic Started: {node}")
+    tnodes.append([astnodes.Node, node])
+    print(f"Panic Started: {node}", node)
     try:
         x = make_Number(node)
         print("RESOLVED NUMBER")
@@ -62,9 +62,9 @@ def panic(node: astnodes.Node, tnodes: list=total_nodes):
         raise Exception(f"Panic Failed....\n{k} \n{node}")
 
 def make_Statement(node: astnodes.Statement, tnodes: list=total_nodes):
-    tnodes.append(astnodes.Statement)
+    tnodes.append([astnodes.Statement, node])
 
-    tnodes.append(astnodes.Statement)
+    tnodes.append([astnodes.Statement, node])
     if node == None:
         return "? None"
     sbtypes = get_subtype(tokey(node))
@@ -77,9 +77,7 @@ def make_Statement(node: astnodes.Statement, tnodes: list=total_nodes):
                 pass
     return panic(node)
     
-def make_either(node: astnodes.Expression, tnodes: list=total_nodes|astnodes.Statement):
-    tnodes.append(astnodes.Expression)
-
+def make_either(node: astnodes.Expression|astnodes.Statement):
     try:
         x = make_Expression(node)
         if x == None or x == "":
@@ -96,102 +94,98 @@ def make_either(node: astnodes.Expression, tnodes: list=total_nodes|astnodes.Sta
         panic(node)
 
 def make_AddOp(node: astnodes.Node, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Node)
-
-    tnodes.append(astnodes.AddOp)
+    tnodes.append([astnodes.AddOp, node])
     return "+"
 
 def make_AndLoOp(node: astnodes.AndLoOp, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.AndLoOp)
-
-    tnodes.append(astnodes.AndLoOp)
+    tnodes.append([astnodes.AndLoOp, node])
     return f"{make_either(node.left)} and {make_either(node.right)}"
 
 def make_AnonymousFunction(node: astnodes.AnonymousFunction, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.AnonymousFunction)
+    tnodes.append([astnodes.AnonymousFunction, node])
     return f"lambda: {node.display_name}"
 
 def make_Assign(node: astnodes.Assign, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Assign)
+    tnodes.append([astnodes.Assign, node])
     return f"{make_Namelist(node.targets)} = {make_Namelist(node.values)}"
 
 def make_BAndOp(node: astnodes.BAndOp, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.BAndOp)
+    tnodes.append([astnodes.BAndOp, node])
     return "&"
 
 def make_BOrOp(node: astnodes.BOrOp, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.BOrOp)
+    tnodes.append([astnodes.BOrOp, node])
     return "|"
 
 def make_BShiftLOp(node: astnodes.BShiftLOp, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.BShiftLOp)
+    tnodes.append([astnodes.BShiftLOp, node])
     return "<<"
 
 def make_BShiftROp(node: astnodes.BShiftROp, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.BShiftROp)
+    tnodes.append([astnodes.BShiftROp, node])
     return ">>"
 
 def make_BXorOp(node: astnodes.BXorOp, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.BXorOp)
+    tnodes.append([astnodes.BXorOp, node])
     return "^"
 
 def make_Block(node: astnodes.Block, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Block)
+    tnodes.append([astnodes.Block, node])
     collection = []
     for x in node.body:
         collection.append(transform_lua_node(x))
     return collection
 
 def make_Break(node: astnodes.Break, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Break)
+    tnodes.append([astnodes.Break, node])
     return "break"
 
 def make_Call(node: astnodes.Call, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Call)
-    argstr = ", ".join([make_Expression(arg) for arg in node.args])
+    tnodes.append([astnodes.Call, node])
+    argstr = ", ".join([str(make_Expression(arg)) for arg in node.args])
     return f"{make_Expression(node.func)}({argstr})"
 
 def make_Chunk(node: astnodes.Chunk, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Chunk)
+    tnodes.append([astnodes.Chunk, node])
     collection = []
     for n in node.body:
         collection.append(transform_lua_node(n))
     return collection
 
 def make_Comment(node: astnodes.Comment, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Comment)
+    tnodes.append([astnodes.Comment, node])
     return f"# {node.s[2:]}"
 
-def make_Concat(node: astnodes.Node, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Node)
-    return "+"
+def make_Concat(node: astnodes.Concat, tnodes: list=total_nodes) -> str:
+    tnodes.append([astnodes.Concat, node])
+    return f"+"
 
 def make_Do(node: astnodes.Node, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Node)
+    tnodes.append([astnodes.Node, node])
     return ""
 
 def make_Dots(node: astnodes.Node, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Node)
+    tnodes.append([astnodes.Node, node])
     return "..."
 
 def make_ElseIf(node: astnodes.Node, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Node)
+    tnodes.append([astnodes.Node, node])
     return "elif"
 
-def make_EqToOp(node: astnodes.Node, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Node)
-    return "=="
+def make_EqToOp(node: astnodes.EqToOp, tnodes: list=total_nodes) -> str:
+    tnodes.append([astnodes.EqToOp, node])
+    return f"{make_either(node.left)} == {str(make_either(node.right))}"
 
 def make_ExpoOp(node: astnodes.ExpoOp, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.ExpoOp)
-    return "**"
+    tnodes.append([astnodes.ExpoOp, node])
+    return str(make_either(node.left)) + "**" + str(make_either(node.right))
 
 def make_FieldValue(node: astnodes.Field, tnodes: list=total_nodes):
-    tnodes.append(astnodes.Field)
+    tnodes.append([astnodes.Field, node])
     return make_Expression(node)
 
 def make_Field(node: astnodes.Field, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Field)
+    tnodes.append([astnodes.Field, node])
     if isinstance(node.key, astnodes.Number):
         kk = make_Number(node.key)
         return f"'{kk}' : {make_FieldValue(node.value)},"
@@ -199,26 +193,28 @@ def make_Field(node: astnodes.Field, tnodes: list=total_nodes) -> str:
         kk = node.key
         return f"'{kk.id}' : {make_FieldValue(node.value)},"
 
-
 def make_FloatDivOp(node: astnodes.Node, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Node)
+    tnodes.append([astnodes.FloatDivOp, node])
     return "/"
 
 def make_FloorDivOp(node: astnodes.Node, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Node)
+    tnodes.append([astnodes.Node, node])
     return "//"
 
 def make_Forin(node: astnodes.Forin, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Forin)
-    targets = ", ".join([make_Name(x) for x in node.targets])
+    tnodes.append([astnodes.Forin, node])
+    targets = ", ".join([str(make_either(x)) for x in node.targets])
     tag = f"for {targets} in {node.display_name}:"
-    bb = [make_Expression(x) for x in node.body]
+    try:
+        bb = [make_Expression(x) for x in node.body]
+    except: 
+        bb = [make_Expression(x) for x in node.body.body]
     return tag + "\n\t".join(bb)
 
 def make_Fornum(node: astnodes.Fornum, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Fornum)
+    tnodes.append([astnodes.Fornum, node])
     try:
-        s = make_Expression(node.step)
+        s = make_Number(node.step)
         s = f"{s},"
     except:
         s = ""
@@ -226,7 +222,7 @@ def make_Fornum(node: astnodes.Fornum, tnodes: list=total_nodes) -> str:
     bb = [make_Expression(x) for x in node.body]
     return tag + "\n\t".join(bb)
 
-def make_Body(node: astnodes.Function, tnodes: list=total_nodes|astnodes.Call|astnodes.AnonymousFunction|
+def make_Body(node: astnodes.Function|astnodes.Call|astnodes.AnonymousFunction|
               astnodes.Do|astnodes.ElseIf|astnodes.Forin|astnodes.Fornum|astnodes.If|
               astnodes.Invoke|astnodes.LocalFunction|astnodes.Method):
     retv = []
@@ -241,63 +237,61 @@ def make_Body(node: astnodes.Function, tnodes: list=total_nodes|astnodes.Call|as
     return retv 
 
 def make_Function(node: astnodes.Function, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Function)
+    tnodes.append([astnodes.Function, node])
     tag = f"def {make_Name(node.name)}({make_Namelist(node.args)}):"
     return tag + '\n' "\n\t".join([make_Body(node)])
 
 def make_Goto(node: astnodes.Goto, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Goto)
+    tnodes.append([astnodes.Goto, node])
     return "<NOT IMPLEMENTED>"
 
 def make_GreaterOrEqThanOp(node: astnodes.GreaterOrEqThanOp, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.GreaterOrEqThanOp)
-    return make_either(node.left) + " >= " + make_either(node.right)
+    tnodes.append([astnodes.GreaterOrEqThanOp, node])
+    return str(make_either(node.left)) + " >= " + str(make_either(node.right))
 
 def make_GreaterThanOp(node: astnodes.GreaterThanOp, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.GreaterThanOp)
-    return " > "
+    tnodes.append([astnodes.GreaterThanOp, node])
+    return f"{str(make_either(node.left))} > {str(make_either(node.right))}"
 
 def make_If(node: astnodes.If, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.If)
+    tnodes.append([astnodes.If, node])
     tag = f"if {make_Expression(node.test)}:"
     body = make_Body(node.body)
     other = make_Expression(node.orelse)
     return f"{tag}\n{"\n".join(body)}{other}"
 
 def make_Index(node: astnodes.Index, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Index)
+    tnodes.append([astnodes.Index, node])
     return f"{make_Expression(node.value)}.{make_Expression(node.idx)}"
 
 def make_Invoke(node: astnodes.Invoke, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Invoke)
+    tnodes.append([astnodes.Invoke, node])
     return ":"
 
 def make_Label(node: astnodes.Node, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Node)
+    tnodes.append([astnodes.Node, node])
     return "<NOT IMPLEMENTED (make_Label)>"
 
 def make_LessOrEqThanOp(node: astnodes.LessOrEqThanOp, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.LessOrEqThanOp)
-    return ">="
+    tnodes.append([astnodes.LessOrEqThanOp, node])
+    return f"{str(make_either(node.left))} >= {str(make_either(node.right))}"
 
 def make_LessThanOp(node: astnodes.LessThanOp, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.LessThanOp)
-    return "<"
+    tnodes.append([astnodes.LessThanOp, node])
+    return f"{str(make_either(node.left))} < {str(make_either(node.right))}"
 
 def make_Lhs(node: astnodes.Lhs, tnodes: list=total_nodes) -> str:
-    total_nodes.append(astnodes.Lhs)
+    total_nodes.append([astnodes.Lhs, node])
     return f"<NOT IMPLEMENTED (make_Lhs) [{node.display_name}]>"
 
 def make_LocalAssign(node: astnodes.LocalAssign, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.LocalAssign)
     return make_Assign(node)
 
 def make_LocalFunction(node: astnodes.Node, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Node)
     return make_Function(node)
 
 def make_Method(node: astnodes.Method, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Method)
+    tnodes.append([astnodes.Method, node])
     nl = make_Namelist(node.args)
     s = ", "
     if nl == "":
@@ -306,16 +300,16 @@ def make_Method(node: astnodes.Method, tnodes: list=total_nodes) -> str:
     bb = "\n".join(make_Body(node.body))
     return f"{tag}\n{bb}\n"
 
-def make_ModOp(node: astnodes.Node, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Node)
-    return "%"
+def make_ModOp(node: astnodes.ModOp, tnodes: list=total_nodes) -> str:
+    tnodes.append([astnodes.ModOp, node])
+    return f"{str(make_either(node.left))} % {str(make_either(node.right))}"
 
-def make_MultOp(node: astnodes.Node, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Node)
-    return "*"
+def make_MultOp(node: astnodes.MultOp, tnodes: list=total_nodes) -> str:
+    tnodes.append([astnodes.MultOp, node])
+    return f"{str(make_either(node.left))}*{str(make_either(node.right))}"
 
 def make_Name(node: astnodes.Name, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Name)
+    tnodes.append([astnodes.Name, node])
     return f"{node.id}"
 
 def make_Namelist(nodes: list[astnodes.Expression]) -> str:
@@ -324,19 +318,19 @@ def make_Namelist(nodes: list[astnodes.Expression]) -> str:
         return str(nodes)
     for item in nodes:
         x = make_Expression(item)
-        items.append(x)
+        items.append(str(x))
     return ", ".join(items)
 
-def make_Nil(node: astnodes.Node, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Node)
+def make_Nil(node: astnodes.Nil, tnodes: list=total_nodes) -> str:
+    tnodes.append([astnodes.Nil, node])
     return "None"
 
 def make_NotEqToOp(node: astnodes.NotEqToOp, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.NotEqToOp)
-    return "!="
+    tnodes.append([astnodes.NotEqToOp, node])
+    return f"{str(make_either(node.left))} != {str(make_either(node.right))}"
 
 def make_Number(node: astnodes.Number, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Number)
+    tnodes.append([astnodes.Number, node])
     return node.n
     try:
         x = make_Expression(node)
@@ -346,70 +340,73 @@ def make_Number(node: astnodes.Number, tnodes: list=total_nodes) -> str:
         return x
 
 def make_OrLoOp(node: astnodes.OrLoOp, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.OrLoOp)
+    tnodes.append([astnodes.OrLoOp, node])
     l = make_either(node.left)
     print("left", l, f"\n{node.left}")
     r = make_either(node.right)
     return  f"{str(l)} if {str(l)}  else {str(r)}"
 
 def make_Repeat(node: astnodes.Repeat, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Repeat)
+    tnodes.append([astnodes.Repeat, node])
     return f"<NOT IMPLEMENTED (make_Repeat)>"
 
 def make_Return(node: astnodes.Return, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Return)
+    tnodes.append([astnodes.Return, node])
     return f"return {make_Namelist(node.values)}"
 
 def make_SemiColon(node: astnodes.SemiColon, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.SemiColon)
+    tnodes.append([astnodes.SemiColon, node])
     return ";"
 
 def make_String(node: astnodes.String, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.String)
+    tnodes.append([astnodes.String, node])
     return f'"{node.s}"'
 
 def make_SubOp(node: astnodes.SubOp, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.SubOp)
-    return f"{make_either(node.left)} - {make_either(node.right)}"
+    tnodes.append([astnodes.SubOp, node])
+    return f"{str(make_either(node.left))} - {str(make_either(node.right))}"
 
 def make_Table(node: astnodes.Table, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Table)
+    tnodes.append([astnodes.Table, node])
     rbracket = "{"
     lbracket = "}"
     tag = f"{rbracket}\n\t\t"
-    fs = ",\n\t\t".join([make_Field(x) for x in node.fields])
+    fs = ",\n\t\t".join([str(make_Field(x)) for x in node.fields])
     return f"{tag}{fs}\n\t{lbracket}"
 
 def make_TrueExpr(node: astnodes.TrueExpr, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.TrueExpr)
+    tnodes.append([astnodes.TrueExpr, node])
     return f"True"
 
 def make_UBNotOp(node: astnodes.UBNotOp, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.UBNotOp)
-    return "~" + make_either(node.operand)
+    tnodes.append([astnodes.UBNotOp, node])
+    return "~" + str(make_either(node.operand))
 
 def make_ULNotOp(node: astnodes.ULNotOp, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.ULNotOp)
-    return f"not({make_either(node.operand)})"
+    tnodes.append([astnodes.ULNotOp, node])
+    return f"not({str(make_either(node.operand))})"
 
 def make_ULengthOP(node: astnodes.ULengthOP, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.ULengthOP)
-    return f"len({node.display_name})"
+    tnodes.append([astnodes.ULengthOP, node])
+    return "len({{NEXT}})"
 
 def make_UMinusOp(node: astnodes.UMinusOp, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.UMinusOp)
-    return "-" + make_either(node.operand)
+    tnodes.append([astnodes.UMinusOp, node])
+    return "-" + str(make_either(node.operand))
 
 def make_Varargs(node: astnodes.Varargs, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.Varargs)
+    tnodes.append([astnodes.Varargs, node])
     return f"<Not Implemented (make_Varargs) {node.display_name}>"
 
 def make_While(node: astnodes.While, tnodes: list=total_nodes) -> str:
-    tnodes.append(astnodes.While)
+    tnodes.append([astnodes.While, node])
     tag = "while True:"
     bb= "\n\t".join(make_Body(node))
     return f"{tag}\n\t{bb}"
 
+def make_FalseExpr(node: astnodes.FalseExpr, tnodes: list=total_nodes):
+    tnodes.append([astnodes.FalseExpr, node])
+    return "False"
 
 def go(node):
     return ""
@@ -476,9 +473,9 @@ node_function_map = {
     'luaparser.astnodes.Varargs':make_Varargs,
     'luaparser.astnodes.While':make_While,
     'luaparser.astnodes.Expression': make_Expression,
+    'luaparser.astnodes.FalseExpr':make_FalseExpr,
     'type':make_either,
     "enum.EnumType":go
-
 }
 
 def try_subtypes(node:astnodes.Node):

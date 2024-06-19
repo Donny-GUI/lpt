@@ -3,12 +3,10 @@ from luaparser.ast import parse
 from luaparser.astnodes import Chunk, Node
 from tools.file import get_files_by_extension
 from tools.path import desktop_path
-from transform.python import transform_lua_node
+from transform.python import transform_lua_node, get_total_nodes
+from tools.symbols import LARROWS, RARROWS, NODE, RESULT
 
-NODE = "\033[35mnode\033[0m"
-RESULT = "\033[36mresult\033[0m"
-L = "\033[46m<<<                       \033[0m"
-R = "\033[46m>>>                       \033[0m"
+
 def read_lua(filepath:str):
     with open(filepath, "r") as r:
         content = r.read()
@@ -23,6 +21,10 @@ def file_to_nodes(filepath:str) -> list[Node]:
     nodes = parse(string)
     return [node for node in nodes.body.body]
 
+def transpile_lua(filepath:str):
+    python_nodes = [transform_lua_node(node)
+                    for node in
+                    file_to_nodes(filepath)]
 
 def test_transform():
     for file in get_files_by_extension(desktop_path, ".lua"):
@@ -31,6 +33,7 @@ def test_transform():
             printtest(f"{NODE}{node}")
             n = transform_lua_node(node)
             printtest(f"{RESULT} \n{L}\n{n}\n{R}")
+
 
 def printtest(obj):
     print(f"[\033[32mDEBUG\033[0m]: {obj}")
