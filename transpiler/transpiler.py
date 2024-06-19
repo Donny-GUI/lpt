@@ -1,24 +1,25 @@
 from luaparser import ast as lua_ast
+from luaparser.ast import to_pretty_str
 from transpiler.typehints import LuaNode, PythonNode
 import ast
 from transpiler.util import cos, change_extension
 from transpiler.nodes import PythonFalseKeyword, PythonNone, PythonNothing, PythonTrueKeyword
 import os 
-import astor
 
 
-fix = ast.fix_missing_locations
-src = astor.code_gen.to_source
 
-def unparse_node(node: ast.AST):
-    n = fix(node)
-    try:
-        return n 
-    except Exception as e:
-        print(e)
-        if isinstance(n, ast.FunctionDef):
-            n.decorator_list = []
-            return unparse_node(n)
+def convert_expression(expr):
+    # Simplified example
+    if isinstance(expr, lua_ast.Expression):
+        return expr.value
+    return ""
+
+def convert_statement(stmt):
+    # Simplified example
+    if isinstance(stmt, lua_ast.Statement):
+        return stmt.content
+    return ""
+
 
 def create_function_def(name, args, body=None, returns=None, decorators=None):
     """
@@ -34,6 +35,9 @@ def create_function_def(name, args, body=None, returns=None, decorators=None):
     Returns:
     - ast.FunctionDef: An ast.FunctionDef node.
     """
+    if isinstance(name, lua_ast.Name):
+        name = name.display_name
+        
     # Convert argument names to ast.arg nodes
     arguments = ast.arguments(
         posonlyargs=[],  # Positional-only arguments
@@ -61,12 +65,12 @@ def create_function_def(name, args, body=None, returns=None, decorators=None):
         name=name,
         args=arguments,
         body=body_nodes,
-        decorator_list=decorator_nodes,
         returns=return_node,
         type_comment=None
     )
-    function_def.decorator_list = []
-    return ast.fix_missing_locations(function_def)
+    function_def.__setattr__("decorator_list", [])
+    function_def.__dict__["decorator_list"] = []
+    return ast.ast.fix_missing_locations_missing_locations(function_def)
 
 ###[-] Object Classes
 
@@ -93,9 +97,9 @@ class LuaToPythonTranspiler(lua_ast.ASTVisitor):
         return ast.Module(body=body)
 
     def visit_Assignment(self, node: lua_ast.Assign) -> ast.AST:
-        targets = [fix(self.generic_visit(v)) for v in node.targets]
-        value = self.generic_visit(node.values[0]) if node.values else fix(ast.Constant(value=None))
-        return fix(ast.Assign(targets=targets, value=value))
+        targets = [ast.fix_missing_locations(self.generic_visit(v)) for v in node.targets]
+        value = self.generic_visit(node.values[0]) if node.values else ast.fix_missing_locations(ast.Constant(value=None))
+        return ast.fix_missing_locations(ast.Assign(targets=targets, value=value))
 
     def visit_Name(self, node: lua_ast.Name) -> ast.AST:
         return ast.Name(id=node.id, ctx=ast.Load())
@@ -207,59 +211,69 @@ class LuaToPythonTranspiler(lua_ast.ASTVisitor):
         return ast.Gt()
         
     def visit_If(self, node: lua_ast.If) -> ast.AST:
-        return ast.If(test=node.test, orelse=node.orelse, lineno=node.line, col_offset=cos(node))
-        
+        one = f"if {convert_expression(node.test)}:"
+        x = []
+        for y in node.body:
+            x.append("\t"+ self.generic_visit(y))
+        x.insert(0, one)
+        return x
+    
     def visit_IndexAccess(self, node: lua_ast.Index) -> ast.AST:
-        return ast.Subscript()
+        return f"{node.display_name}[{node.idx}]"
         
     def visit_Label(self, node: lua_ast.Label) -> ast.AST:
         # TODO
         return
         
     def visit_LessThanOrEqual(self, node: lua_ast.LessOrEqThanOp) -> ast.AST:
-        return ast.LtE()
+        return "<="
         
     def visit_LessThan(self, node: lua_ast.LessThanOp) -> ast.AST:
-        return ast.Lt()
+        return "<"
         
     def visit_LocalAssign(self, node: lua_ast.LocalAssign) -> ast.AST:
-        return ast.Assign()
+        return self.visit_Assignment(node)
     
     def visit_LocalFunction(self, node: lua_ast.LocalFunction) -> ast.AST:
-        return ast.FunctionDef(name=node.name, 
-                               args=self._convArgs(node.args), 
-                               body=self._convBody(node), 
-                               decorator_list=[], 
-                               lineno=node.line, 
-                               col_offset=cos(node))
+        return self.visit_Function(node)
         
+    def _argumentString(self, node):
+        return ", ".join([arg.display_name] for arg in node.args)
+
     def visit_ClassMethod(self, node: lua_ast.Method) -> ast.AST:
-        return ast.FunctionDef(name=node.name, )
+        tag = [f"def {node.display_name}(self, {self._argumentString(node)}):"]
+        body = []
+        for statement in node.body:
+            body.append(self.generic_visit(statement))
+        return [tag] + body
+        
         
     def visit_Modulo(self, node: lua_ast.ModOp) -> ast.AST:
-        return ast.Mod()
+        return "%"
         
     def visit_MultiplicationOperator(self, node: lua_ast.MultOp) -> ast.AST:
-        return ast.Mult()
+        return "*"
         
     def visit_NilKeyword(self, node: lua_ast.Nil) -> ast.AST:
-        return PythonNone()
+        return "None"
         
     def visit_NotEqualToOperator(self, node: lua_ast.NotEqToOp) -> ast.AST:
-        return ast.NotEq()
+        return "!="
         
     def visit_LogicalOrOperator(self, node: lua_ast.OrLoOp) -> ast.AST:
-        return ast.Or()
+        return "or"
         
     def visit_RepeatUntil(self, node: lua_ast.Repeat) -> ast.AST:
         # TODO
-        return None
+        return []
         
     def visit_ReturnKeyword(self, node: lua_ast.Return) -> ast.AST:
-        return ast.Return()
+        retv = [self.generic_visit(val) for val in node.values]
+        retv.insert(0, "return")
+        return retv
         
     def visit_SubtractionOperator(self, node: lua_ast.SubOp) -> ast.AST:
-        return ast.Sub()
+        return "-"
     
     def _fieldToDictKey(self, field: lua_ast.Field):
         return ast.Constant(value=field.key, kind=str)
@@ -278,22 +292,22 @@ class LuaToPythonTranspiler(lua_ast.ASTVisitor):
         return py
     
     def visit_LogicalOrOperator(self, node: lua_ast.OrLoOp) -> ast.AST:
-        return ast.Or()
+        return "or"
         
     def visit_UnaryNotOperator(self, node: lua_ast.UBNotOp) -> ast.AST:
-        return ast.Not()
+        return "not"
         
     def visit_UnaryLengthOperator(self, node: lua_ast.ULengthOP) -> ast.AST:
-        return ast.Name("len", ctx=ast.Call())
+        return "len"
         
     def visit_UnaryLogicalNotOperator(self, node: lua_ast.ULNotOp) -> ast.AST:
-        return ast.NotEq()
+        return "!="
         
     def visit_UnaryMinusOperator(self, node: lua_ast.UMinusOp) -> ast.AST:
-        return ast.USub()
+        return "-"
         
     def visit_While(self, node: lua_ast.While) -> ast.AST:
-        return ast.While()
+        return "while True:"
     
     def convert_nodes(self, nodes:list[LuaNode]=[]):
         if nodes == []:
@@ -419,9 +433,7 @@ class LuaToPythonTranspiler(lua_ast.ASTVisitor):
         elif isinstance(node, lua_ast.While):
             pynode = self.visit_While(node)
         else:
-            print(f"Unsupported node type: {type(node).__name__}")
-            print(node)
-            return None
+            return ast.AST()
         return ast.fix_missing_locations(pynode)
     
     def convert_file(self, filepath: str) -> str:
@@ -450,18 +462,13 @@ class LuaToPythonTranspiler(lua_ast.ASTVisitor):
         """
         lua_chunk: lua_ast.Chunk = lua_ast.parse(lua)
         nodes = []
-        try:
-            for x in lua_chunk.body.body:
-                y = self.generic_visit(x)
-                if y == None:
-                    continue
-                nodes.append(src(fix(y)))
-        except TypeError as te:
-            print(te)
-            print("ABORTED")
-            return
-        for node in nodes:
-            print(node)
-        input()
+        for x in lua_chunk.body.body:
+            y = self.generic_visit(x)
+            print(type(y))
+            try:
+                f = ast.unparse(y)
+                print("unparsed:", f)
+            except:
+                print(ast.unparse(ast.fix_missing_locations(y)))
         
         return x

@@ -14,7 +14,4 @@ transpiler = LuaToPythonTranspiler()
 for file in get_files_by_extension(desktop_path, ".lua"):
     chunk = read_lua(file)
     python = transpiler.convert_file(file)
-
-
-    print(python)
     input()
