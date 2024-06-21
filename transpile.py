@@ -1,19 +1,29 @@
-from tokenize import detect_encoding
-from typing import List, Generator
-from io import TextIOWrapper
 import tempfile
-# Non Standard
+import os
+import re 
+from dataclasses import dataclass
+from io import TextIOWrapper
+from typing import List, Generator
+from tokenize import detect_encoding
+from datetime import datetime
+# Non-Standard
 from luaparser.ast import parse
-# Local Modules
-from transform.python import transform_lua_node
+from luaparser.ast import get_token_stream
+# Local 
 from typedef import LuaNode
 from tools.file import force_open
 from transnode import TransNode
-
 from tools.color import *
 from tools.updater import *
+from stringtable import AllowAllModulesString, MadeByString
+DEBUG = True 
+from tools.updater import set_debug
+
+update, debug, init = set_debug(DEBUG)
 
 
+def timestamp():
+    return datetime.now().strftime()
 
 def get_encoding(filepath: str) -> str:
     """
@@ -31,6 +41,11 @@ def get_encoding(filepath: str) -> str:
     except:
         fp.close()
         return "utf-8"
+
+def string_to_transnodes(string: str) -> List[TransNode]:
+    return [TransNode(node=node, index=index, source=string) 
+            for index, node 
+            in enumerate(string_to_lua_nodes(string))]
 
 def lua_file_to_transnodes(filepath: str) -> List[TransNode]:
     """
@@ -107,23 +122,162 @@ def lua_check_require(lua_string:str) -> bool:
             return True
     return False
 
-def make_project():
-    pass
+def extract_require_statements2(lua_source:str) -> list[str]:
+    retv = []
+    for line in lua_source.splitlines():
+        if line.startswith("require"):
+            try:
+                lidx = line.index("'")
+                ridx = line.rindex("'")
+            except IndexError:
+                idx = line.index('"')
+                idx = line.rindex('"')
+            finally:
+                p = line[lidx:ridx].replace("..", os.getcwd())
+                retv.append(p)
+    return retv 
 
-def make_script():
-    pass 
+def extract_require_statements(lua_source: str):
+    """
+    Extracts all Lua `require` statements from the given source code.
 
-def transpile_lua_file(filepath:str):
+    Args:
+        lua_source (str): The Lua source code as a string.
+
+    Returns:
+        list: A list of module names required in the Lua source code.
+    """
+    # Regular expression to match require statements
+    pattern = r'require\s*\(\s*["\']([^"\']+)["\']\s*\)'
+    
+    # Find all matches in the source code
+    matches = re.findall(pattern, lua_source)
+    
+    return matches
+
+def transpile_lua(filepath:str, follow_requires=True):
+    """
+    Convert a string of lua source filepath to a string of 
+    python source code.
+    """
+
+    def transpile_submodule(filepath: str, project_directory, sm_name:str) -> str:
+
+        final = []
+        content: str = read_lua(filepath)
+        filename = os.path.basename(filepath).split(".")[0]
+        root_dir = os.path.dirname(filepath)
+        module_name = os.path.basename(root_dir)
+        transnodes:list[TransNode] = string_to_transnodes(content)
+        token_stream = get_token_stream(content)
+
+        for tnode in transnodes:
+            tnode.collect_tokens(token_stream=token_stream)
+            final.append(tnode.python_string)
+
+        filename+=".py"
+        fullp = os.path.join(project_directory, sm_name, filename)
+        f = f"# Creation Time: {timestamp()}\n# Module: {module_name}\n# File: {filename}\n# User: {os.getlogin()}\n"
+
+        with open(fullp, "w") as f:
+            f.write(f)
+            for x in final:
+                f.write(x)
+                f.write("\n")
+            f.write("\n")
+
+        return fullp
+    
+    def transpile_root_module(filepath:str, project_dir: str) -> str:
+
+        final = []
+        content: str = read_lua(filepath)
+        filename = os.path.basename(filepath).split(".")[0]
+        root_dir = os.path.dirname(filepath)
+        transnodes:list[TransNode] = string_to_transnodes(content)
+        token_stream = get_token_stream(content)
+
+        for tnode in transnodes:
+            tnode.collect_tokens(token_stream=token_stream)
+            final.append(tnode.python_string)
+        
+        signature = f"# Creation Time: {timestamp()}\n# File: {filename}\n"
+        filename+=".py"
+        fp = os.path.join(project_dir, filename)
+        
+        with open(fp, "w") as f:
+            f.write(signature)
+            for x in final:
+                f.write(x+"\n")
+        
+        return fp
+    
+    def get_submodule_name(filepath:str):
+        return os.path.basename(os.path.dirname(filepath))
+    
+    def init_submodule(module_name: str, project_dir:str):
+        p = os.path.join(project_dir, module_name)
+        if os.path.exists(p) == True:
+            return
+        os.makedirs(p, exist_ok=True)
+        init_ = os.path.join(p, "__init__.py")
+        with open(init_, "w") as r:
+            r.close()
+        
+
+
+    # make project directory
+    project_name = os.path.basename(filepath).split(".")[0] + "_" + str(hash(filepath))
+    project_directory = os.path.join(os.getcwd(), project_name)
+    os.makedirs(name=project_directory, exist_ok=True)
+
+    #[1] begin root transpile
+    retv = []
+
+    ##[1.1] Read source string
+    root_dir = os.path.dirname(filepath)
     content: str = read_lua(filepath)
-    has_require = lua_check_require(content)
-    lua_nodes = string_to_lua_nodes(content)
-    total = len(lua_nodes)
-    converted = 0
-    for index, node in enumerate(lua_nodes):
-        pynode = transform_lua_node(node)
+    
+    ###[1.2] Get require statements (imports)
+    requires = extract_require_statements2(content) \
+        if lua_check_require(content) == True else []
+    
+    ####[1.3] Get requires and transpile them if necessary
+    if follow_requires == True:
+        for req in requires:
+            # transpile a module that is on the same level as the root file
+            if os.path.dirname(req) == root_dir:
+                # is same directory as root
+                transpile_root_module(req, project_directory)
+            # make a submodule if it doesnt exist and transpile source to it
+            elif os.path.dirname(req) != root_dir:
+                # is sub module 
+                sub_module_name = get_submodule_name(req)
+                init_submodule(sub_module_name, project_dir=project_directory)
+                transpile_submodule(req, project_directory, sub_module_name)
 
-        converted+=1
-    python_nodes = [transform_lua_node(node)
-                    for node in
-                    lua_file_to_lua_nodes(filepath)]
+    ####[1.3] Acquire Trans nodes and stream
+    transnodes:list[TransNode] = string_to_transnodes(content)
+    token_stream = get_token_stream(content)
+
+
+
+
+
+
+        
+    for tnode in transnodes:
+        tnode.collect_tokens(token_stream=token_stream)
+        x.append(tnode.python_string)
+    
+    root = PythonSourceFile(source_code="")
+    
+
+
+
+
+
+
+
+
 

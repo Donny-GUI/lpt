@@ -3,7 +3,8 @@ from typedef import LuaNode, FilePointer
 from datac import Slice
 from ast import parse as python_parse
 from transform.python import transform_lua_node
-
+from antlr4.Token import CommonToken
+from antlr4.CommonTokenStream import CommonTokenStream
 
 
 class TransNode:
@@ -36,11 +37,12 @@ class TransNode:
         # initialized attributes
         self.lua_node = node
         self.index = index
+        self.lua_tokens:list[list[CommonToken]] = []
         self.__source = source
         
         # as needed attributes
         self.__python_node = None
-        self.__python_string = None 
+        self.__python_string = None
 
         # input dependent attributes
         if isinstance(self.__source, FilePointer):
@@ -77,3 +79,20 @@ class TransNode:
                 self.__python_string = transform_lua_node(self.lua_node)
             self.__python_node = python_parse(source=self.__python_string, mode="eval")
         return self.__python_node
+    
+    def collect_tokens(self, token_stream: CommonTokenStream):
+        self.lua_tokens.append(token_stream.getTokens(self.lua_node.first_token.start, self.lua_node.last_token.stop))
+        self.indentation = token_stream.getHiddenTokensToLeft(self.lua_node.first_token.start)
+        # fixes the indents here
+        retv = []
+        ind = " "*len(self.indentation)
+        for line in self.python_string.split("\n"):
+            retv.append(ind + line)
+        self.__python_string = "\n".join(retv)
+
+    #def fix_indentation(self):
+    #    retv = []
+    #    ind = " "*len(self.indentation)
+    #    for line in self.python_string.split("\n"):
+    #        retv.append(ind + line)
+    #    self.__python_string = "\n".join(retv)
