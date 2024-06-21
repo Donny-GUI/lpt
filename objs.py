@@ -3,5 +3,5 @@ from io import TextIOWrapper
 
 
 # init objects
-MainNode = Node()
+MainNode = Node(name="main")
 MainFile = TextIOWrapper

@@ -1,7 +1,6 @@
 import tempfile
 import os
 import re 
-from dataclasses import dataclass
 from io import TextIOWrapper
 from typing import List, Generator
 from tokenize import detect_encoding
@@ -18,6 +17,7 @@ from tools.updater import *
 from stringtable import AllowAllModulesString, MadeByString
 DEBUG = True 
 from tools.updater import set_debug
+
 
 update, debug, init = set_debug(DEBUG)
 
@@ -62,36 +62,6 @@ def lua_file_to_transnodes(filepath: str) -> List[TransNode]:
             for index, node 
             in enumerate(string_to_lua_nodes(src))]
 
-def generate_transnodes(filepath: str) -> Generator[TransNode]:
-    """
-    Generator for Transnodes
-    Arguments:
-        filepath(str): path to the file to create nodes from
-    Returns (yield) :
-        yields TransNodes from the filepath
-    """
-    enc = get_encoding(filepath)
-    # get file ptr and source, then reset seek
-    fp: TextIOWrapper = open(filepath, "r", encoding=enc)
-    src: str
-    try:
-        src = fp.read()
-    except:
-        # safety first 
-        fp.close()
-        raise FileNotFoundError("Could not read from the buffer")
-    finally:
-        # and second
-        fp.close()
-    # write source to tempfile
-    fp: tempfile._TemporaryFileWrapper = tempfile.TemporaryFile(prefix="__lua_source__", suffix=".lua", encoding=enc)
-    fp.write(src.encode(enc))
-    fp.seek(0)
-    
-    # generate nodes
-    for index, node in enumerate(string_to_lua_nodes(src)):
-        yield TransNode(node=node, index=index, source=fp)
-
 def read_lua(filepath:str):
     """
     Get encoding of file and open file line by line
@@ -101,7 +71,9 @@ def read_lua(filepath:str):
     Returns:
         str : string representation of a lua file
     """
-    return force_open(filepath)
+    with open(file=filepath, mode="r", encoding="utf-8", errors="ignore") as f:
+        src = f.read()
+    return src
 
 def string_to_lua_nodes(string: str) -> List[LuaNode]:
     """Converts a string of lua code to 
@@ -125,7 +97,7 @@ def lua_check_require(lua_string:str) -> bool:
 def extract_require_statements2(lua_source:str) -> list[str]:
     retv = []
     for line in lua_source.splitlines():
-        if line.startswith("require"):
+        if line.startswith("require("):
             try:
                 lidx = line.index("'")
                 ridx = line.rindex("'")
@@ -133,8 +105,9 @@ def extract_require_statements2(lua_source:str) -> list[str]:
                 idx = line.index('"')
                 idx = line.rindex('"')
             finally:
-                p = line[lidx:ridx].replace("..", os.getcwd())
-                retv.append(p)
+                p = line[lidx:ridx].replace(".", os.sep)
+                pp = os.path.join(os.getcwd(), p)
+                retv.append(pp)
     return retv 
 
 def extract_require_statements(lua_source: str):
@@ -160,9 +133,13 @@ def transpile_lua(filepath:str, follow_requires=True):
     Convert a string of lua source filepath to a string of 
     python source code.
     """
+    update(f"transpile_lua(filepath={filepath} follow_requires={follow_requires})")
+    content: str = read_lua(filepath)
+    filename = os.path.basename(filepath).split(".")[0]
+    root_dir = os.path.dirname(filepath)
 
     def transpile_submodule(filepath: str, project_directory, sm_name:str) -> str:
-
+        update(f"transpile_submodule {filepath} {project_directory} {sm_name}")
         final = []
         content: str = read_lua(filepath)
         filename = os.path.basename(filepath).split(".")[0]
@@ -189,7 +166,7 @@ def transpile_lua(filepath:str, follow_requires=True):
         return fullp
     
     def transpile_root_module(filepath:str, project_dir: str) -> str:
-
+        update(f"transpile_root_node {filepath} {project_dir}")
         final = []
         content: str = read_lua(filepath)
         filename = os.path.basename(filepath).split(".")[0]
@@ -223,8 +200,14 @@ def transpile_lua(filepath:str, follow_requires=True):
         init_ = os.path.join(p, "__init__.py")
         with open(init_, "w") as r:
             r.close()
-        
-
+    
+    cwd = os.getcwd()
+    print(cwd)
+    if filepath.startswith(".."):
+        filepath = os.path.join(cwd, filepath[2:])
+    
+    if filepath.startswith("."):
+        filepath = os.path.join(cwd, filepath[1:])
 
     # make project directory
     project_name = os.path.basename(filepath).split(".")[0] + "_" + str(hash(filepath))
@@ -232,10 +215,10 @@ def transpile_lua(filepath:str, follow_requires=True):
     os.makedirs(name=project_directory, exist_ok=True)
 
     #[1] begin root transpile
-    retv = []
 
     ##[1.1] Read source string
     root_dir = os.path.dirname(filepath)
+    print("filepath: ", filepath)
     content: str = read_lua(filepath)
     
     ###[1.2] Get require statements (imports)
@@ -260,24 +243,23 @@ def transpile_lua(filepath:str, follow_requires=True):
     transnodes:list[TransNode] = string_to_transnodes(content)
     token_stream = get_token_stream(content)
 
-
-
-
-
-
-        
+    root_strings = []
     for tnode in transnodes:
         tnode.collect_tokens(token_stream=token_stream)
-        x.append(tnode.python_string)
+        root_strings.append(tnode.python_string)
     
-    root = PythonSourceFile(source_code="")
+    filename = os.path.basename(filepath).split(".")[0]
+    root_dir = os.path.dirname(filepath)
+    signature = f"# Creation Time: {timestamp()}\n# File: {filename}\n"
+    filename+=".py"
+    fp = os.path.join(project_directory, filename)
     
-
-
-
-
-
-
-
-
-
+    with open(fp, "w") as f:
+        f.write(signature)
+        for x in root_strings:
+            f.write(x+"\n")
+        f.write("\n")
+    
+    
+if __name__ == "__main__":
+    transpile_lua(".\\testproject\\test.lua")

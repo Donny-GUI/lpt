@@ -35,13 +35,14 @@ def method(msg:str):
 def _method(msg):
     pass 
 
-update_function = function
-debug_function = function
-init_function = function 
 
-def set_debug(debug_state=False) -> tuple[update_function, debug_function, init_function]:
+
+
+def set_debug(debug_state=False):
     if debug_state == True:
-        method = method
+        from tools.updater import update as update
+        from tools.updater import debug as debug
+        from tools.updater import init as init
     elif debug_state == False:
         from tools.updater import _update as update
         from tools.updater import _debug as debug

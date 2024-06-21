@@ -10,7 +10,7 @@ from antlr4.CommonTokenStream import CommonTokenStream
 class TransNode:
 
     def __init__(self, 
-                 node:LuaNode=MainNode, 
+                 node:LuaNode="", 
                  index:int=0, 
                  source: FilePointer|str=MainFile) -> None:
         
