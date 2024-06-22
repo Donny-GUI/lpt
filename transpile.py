@@ -6,7 +6,6 @@ from tokenize import detect_encoding
 from datetime import datetime
 from pathlib import Path as _path
 from random import randint
-
 # Non-Standard
 from luaparser.ast import parse
 from luaparser.ast import get_token_stream
@@ -37,13 +36,11 @@ update, debug, init = set_debug(DEBUG)
 def timestamp():
     return datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
-
 def random_number_sequence(length=5):
     retv = []
     for i in range(0, length):
         retv.append(str(randint(0, 9)))
     return "".join(retv)
-
 
 def get_encoding(filepath: str) -> str:
     """
@@ -222,7 +219,6 @@ def transpile_lua(filepath:str, follow_requires=True):
     project_directory.mkdir()
 
     ##[1.1] Read source string
-    root_dir = os.path.dirname(filepath.string())
     print("filepath: ", filepath.string())
     content: str = read_lua(filepath.string())
     
