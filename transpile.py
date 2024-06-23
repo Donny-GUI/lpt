@@ -1,22 +1,19 @@
-
 import os
-import re 
+import re
 from typing import List
 from tokenize import detect_encoding
 from datetime import datetime
 from pathlib import Path as _path
 from random import randint
+from typing import List, Union, Tuple, Optional
+import logging
 # Non-Standard
 from luaparser.ast import parse
 from luaparser.ast import get_token_stream
 # Local 
 from typedef import LuaNode
 from transnode import TransNode
-from tools.color import *
-from tools.updater import *
-DEBUG = True 
 from tools.updater import set_debug
-
 
 
 class Path(_path):
@@ -25,11 +22,12 @@ class Path(_path):
     
     def string(self):
         return str(self)
+    
 
-
+###########################################
+DEBUG = True 
+###########################################
 CWD = Path(os.getcwd())
-
-
 update, debug, init = set_debug(DEBUG)
 
 
@@ -111,7 +109,7 @@ def lua_check_require(lua_string:str) -> bool:
             return True
     return False
 
-def extract_require_statements(lua_source: str):
+def _extract_require_statements(lua_source: str):
     """
     Extracts all Lua `require` statements from the given source code.
 
@@ -130,131 +128,301 @@ def extract_require_statements(lua_source: str):
         return [CWD.string() + os.sep + str(m).replace(".", os.sep) for m in matches]
     else:
         return []
+    
+def _transpile_submodule(filepath: str, project_directory: str, sm_name: str) -> str:
+    """
+    Transpile a Lua submodule to a Python file within a specified project directory.
 
-def _transpile_submodule(filepath: str, project_directory, sm_name:str) -> str:
-        
-        update(f"transpile_submodule {filepath} {project_directory} {sm_name}")
-        final = []
-        # make the python file path
-        file = os.path.basename(filepath)
-        dn = os.path.dirname(filepath)
-        ff = file.split(".")[0]
-        module_name = os.path.basename(dn)
-        python_full_fp = dn + os.sep + sm_name + os.sep + ff + ".py"
-        # read the lua file to string to nodes and get string
-        content: str = read_lua(filepath)
-        transnodes:list[TransNode] = string_to_transnodes(content)
-        token_stream = get_token_stream(content)
-        for tnode in transnodes:
-            tnode.collect_tokens(token_stream=token_stream)
-            final.append(tnode.python_string)
-        stamp = f"# Creation Time: {timestamp()}\n# Module: {module_name}\n# File: {ff}.py\n# User: {os.getlogin()}\n"
-        with open(python_full_fp, "w") as f:
-            f.write(stamp)
-            for x in final:
-                f.write(x)
-                f.write("\n")
-            f.write("\n")
+    This function reads a Lua file, converts it to a Python-equivalent script, and writes
+    the output to a specified submodule directory within a project directory. The resulting 
+    Python file contains metadata like creation time, module name, and user.
 
-        return python_full_fp
+    Args:
+        filepath (str): The path to the Lua file to transpile.
+        project_directory (str): The root directory of the project where the transpiled submodule will be saved.
+        sm_name (str): The name of the submodule directory where the transpiled file will be placed.
 
-def _get_submodule_name(filepath:str):
-        
-        dn = os.path.dirname(filepath)
-        bn = Path(os.path.basename(dn))
-        print("submodule: ", bn)
-        return str(bn)
+    Returns:
+        str: The path to the generated Python file.
 
-def _init_submodule(module_name: str|Path, project_dir:str):
+    Raises:
+        IOError: If there is an issue reading the Lua file or writing the Python file.
+        ValueError: If the Lua file content cannot be parsed or transpiled.
 
-    p = Path(str(project_dir) + os.sep + module_name)
-    if p.exists() == False:
-        p.mkdir()
-    init_ = p.joinpath("__init__.py")
-    with open(init_, "w") as r:
-        r.close()
-    return p, init_
+    Dependencies:
+        - read_lua: A function that reads Lua content from a file and returns it as a string.
+        - string_to_transnodes: A function that converts a Lua script string into a list of `TransNode` objects.
+        - get_token_stream: A function that generates a token stream from Lua content.
+        - timestamp: A function that returns the current timestamp as a string.
+        - TransNode: A class or type that has a `collect_tokens` method and `python_string` property.
 
-def _transpile_root_module(filepath:str, project_dir: str) -> str:
-    update(f"transpile_root_node {filepath} {project_dir}")
+    Example:
+        transpile_path = _transpile_submodule('path/to/lua_file.lua', '/project/root', 'submodule_name')
+        print(f'Transpiled file created at: {transpile_path}')
+    """
+    if isinstance(filepath, Path):
+        filepath = filepath.string()
+    if isinstance(project_directory, Path):
+        filepath = project_directory.string()
+
     final = []
-    content: str = read_lua(filepath)
-    filename = os.path.basename(filepath).split(".")[0]
-    root_dir = os.path.dirname(filepath)
-    transnodes:list[TransNode] = string_to_transnodes(content)
-    token_stream = get_token_stream(content)
+    # Make the Python file path
+    file = os.path.basename(filepath)
+    dn = os.path.dirname(filepath)
+    base_filename = file.split(".")[0]
+    module_name = os.path.basename(dn)
+    python_full_fp = os.path.join(dn, sm_name, f"{base_filename}.py")
+    
+    # Read the Lua file and convert to Python
+    try:
+        content: str = read_lua(filepath)
+        transnodes: List[TransNode] = string_to_transnodes(content)
+        token_stream = get_token_stream(content)
+    except Exception as e:
+        raise ValueError(f"Error processing Lua file: {e}")
 
     for tnode in transnodes:
         tnode.collect_tokens(token_stream=token_stream)
         final.append(tnode.python_string)
     
-    signature = f"# Creation Time: {timestamp()}\n# File: {filename}\n"
-    filename+=".py"
-    fp = os.path.join(project_dir, filename)
+    # Create metadata stamp
+    stamp = (
+        f"# Creation Time: {timestamp()}\n"
+        f"# Module: {module_name}\n"
+        f"# File: {base_filename}.py\n"
+        f"# User: {os.getlogin()}\n\n"
+    )
     
-    with open(fp, "w") as f:
-        f.write(signature)
-        for x in final:
-            f.write(x+"\n")
-    
-    return fp
+    # Write the transpiled Python file
+    try:
+        with open(python_full_fp, "w") as f:
+            f.write(stamp)
+            f.write("\n".join(final))
+            f.write("\n")
+    except IOError as e:
+        raise IOError(f"Error writing Python file: {e}")
 
-def transpile_lua(filepath:str, follow_requires=True):
+    return python_full_fp
+
+def _init_submodule(module_name: Union[str, Path], project_dir: str) -> Tuple[Path, Path]:
     """
-    Convert a string of lua source filepath to a string of 
-    python source code.
+    Initialize a submodule directory and create an `__init__.py` file.
+
+    This function creates a directory for the specified submodule within the project directory,
+    and an `__init__.py` file inside it. If the submodule directory already exists, it will not
+    be created again.
+
+    Args:
+        module_name (Union[str, Path]): The name of the submodule to initialize.
+        project_dir (str): The root directory of the project where the submodule will be created.
+
+    Returns:
+        Tuple[Path, Path]: A tuple containing the path to the submodule directory and the path to the `__init__.py` file.
+
+    Raises:
+        IOError: If there is an issue creating the directory or the `__init__.py` file.
+
+    Example:
+        submodule_path, init_file_path = _init_submodule('new_module', '/project/root')
+        print(f'Submodule directory created at: {submodule_path}')
+        print(f'__init__.py file created at: {init_file_path}')
     """
-    update(f"transpile_lua(filepath='{filepath}' follow_requires={follow_requires})")
     
-    if filepath.startswith("."):
-        filepath = os.getcwd() + filepath[1:]
-    filepath:Path = Path(filepath)
-    filename = Path(os.path.basename(filepath.string()).split(".")[0])
-    root_dir = Path(os.path.dirname(filepath.string()))
-    content: str = read_lua(filepath.string())
-
-    # make project directory
-    project_name = Path(os.path.basename(filepath.string()).split(".")[0] + "_" + random_number_sequence(10))
-    project_directory = Path(os.path.join(os.getcwd(), project_name.string()))
-    project_directory.mkdir()
-
-    ##[1.1] Read source string
-    print("filepath: ", filepath.string())
-    content: str = read_lua(filepath.string())
+    submodule_path = Path(project_dir) / module_name
+    try:
+        if not submodule_path.exists():
+            submodule_path.mkdir(parents=True)
+        init_file_path = submodule_path / "__init__.py"
+        with open(init_file_path, "w") as init_file:
+            pass  # Create an empty `__init__.py`
+    except Exception as e:
+        raise IOError(f"Error initializing submodule: {e}")
     
-    ###[1.2] Get require statements (imports)
-    requires = extract_require_statements(content) if follow_requires == True else []
+    return submodule_path, init_file_path
 
-    ####[1.3] Get requires and transpile them if necessary
-    if follow_requires == True:
-        for req in requires:
-            if os.path.isfile(req):
-                if os.path.dirname(req) == root_dir:
-                    _transpile_root_module(req, project_directory)
-            else:
-                sub_module_name = _get_submodule_name(req)
-                smpath, initfile = _init_submodule(sub_module_name, project_dir=project_directory)
-                files = [Path(os.path.join(CWD.string(), x)) 
-                         for x in os.listdir(smpath.string())]
-                for file in files:
-                    _transpile_submodule(file.string(), project_directory, sub_module_name)
+def _get_submodule_name(filepath: str|Path) -> str:
+    """
+    Extract the submodule name from a given file path.
 
-    ####[1.4] Acquire Trans nodes and stream
-    transnodes:list[TransNode] = string_to_transnodes(content)
-    token_stream = get_token_stream(content)
-    root_strings = []
+    This function retrieves the submodule name by obtaining the base name of the 
+    directory containing the file specified by the given file path.
+
+    Args:
+        filepath (str): The path to the file for which the submodule name is to be extracted.
+
+    Returns:
+        str: The name of the submodule.
+
+    Example:
+        submodule_name = _get_submodule_name('/path/to/module/file.lua')
+        print(f'Submodule name: {submodule_name}')
+    """
+    if isinstance(filepath, Path):
+        filepath = filepath.string()
+    directory_name = os.path.dirname(filepath)
+    base_name = Path(directory_name).name
+    # For debugging purposes, consider using logging instead of print
+    # print(f"submodule: {base_name}")
+    return str(base_name)
+
+
+def _transpile_root_module(filepath: str, project_dir: str) -> str:
+    """
+    Transpile a Lua root module to a Python file within a specified project directory.
+
+    This function reads a Lua file, converts it to a Python-equivalent script, and writes
+    the output to the root project directory. The resulting Python file contains metadata 
+    like creation time and filename.
+
+    Args:
+        filepath (str): The path to the Lua file to transpile.
+        project_dir (str): The root directory of the project where the transpiled file will be saved.
+
+    Returns:
+        str: The path to the generated Python file.
+
+    Raises:
+        IOError: If there is an issue reading the Lua file or writing the Python file.
+        ValueError: If the Lua file content cannot be parsed or transpiled.
+
+    Dependencies:
+        - read_lua: A function that reads Lua content from a file and returns it as a string.
+        - string_to_transnodes: A function that converts a Lua script string into a list of `TransNode` objects.
+        - get_token_stream: A function that generates a token stream from Lua content.
+        - timestamp: A function that returns the current timestamp as a string.
+        - TransNode: A class or type that has a `collect_tokens` method and `python_string` property.
+
+    Example:
+        transpile_path = _transpile_root_module('path/to/lua_file.lua', '/project/root')
+        print(f'Transpiled file created at: {transpile_path}')
+    """
+    
+    final = []
+    
+    # Read the Lua file and convert to Python
+    try:
+        content: str = read_lua(filepath)
+        transnodes: List[TransNode] = string_to_transnodes(content)
+        token_stream = get_token_stream(content)
+    except Exception as e:
+        raise ValueError(f"Error processing Lua file: {e}")
+    
     for tnode in transnodes:
         tnode.collect_tokens(token_stream=token_stream)
-        root_strings.append(tnode.python_string)
+        final.append(tnode.python_string)
     
-    signature = f"# Creation Time: {timestamp()}\n# File: {filename}\n"
-    fp = os.path.join(project_directory, filename.string() + ".py")
+    # Create metadata signature
+    filename = os.path.basename(filepath).split(".")[0]
+    signature = (
+        f"# Creation Time: {timestamp()}\n"
+        f"# File: {filename}.py\n"
+    )
+    python_filename = f"{filename}.py"
+    python_filepath = os.path.join(project_dir, python_filename)
     
-    with open(fp, "w") as f:
-        f.write(signature)
-        for x in root_strings:
-            f.write(x+"\n")
-        f.write("\n")
+    # Write the transpiled Python file
+    try:
+        with open(python_filepath, "w") as f:
+            f.write(signature)
+            f.write("\n".join(final))
+            f.write("\n")
+    except IOError as e:
+        raise IOError(f"Error writing Python file: {e}")
+
+    return python_filepath
+
+def transpile_lua(filepath: str, follow_requires: bool = True) -> Optional[Path]:
+    """
+    Transpile a Lua file to a Python file within a project directory.
+
+    This function reads a Lua file, converts it to a Python-equivalent script, and writes the
+    output to a new project directory. Optionally, it also handles `require` statements in Lua
+    by recursively transpiling the required files.
+
+    Args:
+        filepath (str): The path to the Lua file to transpile.
+        follow_requires (bool): Whether to follow and transpile `require` statements. Default is `True`.
+
+    Returns:
+        Optional[Path]: The path to the main Python file created in the project directory. 
+                        Returns `None` if an error occurs.
+
+    Raises:
+        IOError: If there is an issue reading the Lua file or writing the Python file.
+        ValueError: If the Lua file content cannot be parsed or transpiled.
+
+    Dependencies:
+        - read_lua: A function that reads Lua content from a file and returns it as a string.
+        - extract_require_statements: A function that extracts `require` statements from Lua content.
+        - string_to_transnodes: A function that converts a Lua script string into a list of `TransNode` objects.
+        - get_token_stream: A function that generates a token stream from Lua content.
+        - timestamp: A function that returns the current timestamp as a string.
+        - random_number_sequence: A function that generates a random sequence of digits for project naming.
+        - _transpile_root_module: A function that transpiles a root Lua module.
+        - _get_submodule_name: A function that extracts a submodule name.
+        - _init_submodule: A function that initializes a submodule directory.
+        - _transpile_submodule: A function that transpiles a submodule Lua file.
+
+    Example:
+        transpile_path = transpile_lua('path/to/lua_file.lua')
+        if transpile_path:
+            print(f'Transpiled main Python file created at: {transpile_path}')
+    """
+    
+    try:
+        # Resolve filepath and read content
+        filepath = Path(filepath).resolve()
+        if not filepath.is_file():
+            raise ValueError(f"Provided filepath does not point to a valid file: {filepath}")
+        
+        content: str = read_lua(filepath)
+        
+        # Determine project directory name
+        project_name = filepath.stem + "_" + random_number_sequence(10)
+        project_directory = Path(os.getcwd()) / project_name
+        project_directory.mkdir(parents=True)
+        
+        # Read source string
+        logging.info(f"Transpiling Lua file at: {filepath}")
+        
+        # Extract and transpile require statements
+        requires = _extract_require_statements(content) if follow_requires else []
+        if follow_requires:
+            for req in requires:
+                req_path = Path(req)
+                if req_path.is_file():
+                    if req_path.parent == filepath.parent:
+                        _transpile_root_module(req, project_directory)
+                else:
+                    submodule_name = _get_submodule_name(req)
+                    submodule_path, init_file_path = _init_submodule(submodule_name, project_directory)
+                    submodule_files = [file for file in submodule_path.iterdir() if file.is_file()]
+                    for sub_file in submodule_files:
+                        _transpile_submodule(str(sub_file), project_directory, submodule_name)
+        
+        # Acquire Trans nodes and stream
+        transnodes: List[TransNode] = string_to_transnodes(content)
+        token_stream = get_token_stream(content)
+        root_strings = []
+        for tnode in transnodes:
+            tnode.collect_tokens(token_stream=token_stream)
+            root_strings.append(tnode.python_string)
+        
+        # Write the transpiled Python file
+        signature = f"# Creation Time: {timestamp()}\n# File: {filepath.stem}.py\n"
+        python_filepath = project_directory / f"{filepath.stem}.py"
+        
+        with open(python_filepath, "w") as f:
+            f.write(signature)
+            f.write("\n".join(root_strings))
+            f.write("\n")
+        
+        return python_filepath
+    
+    except Exception as e:
+        logging.error(f"An error occurred while transpiling Lua file: {e}")
+        return None
+
     
     
 if __name__ == "__main__":
