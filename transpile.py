@@ -7,13 +7,16 @@ from pathlib import Path as _path
 from random import randint
 from typing import List, Union, Tuple, Optional
 import logging
+from stat import S_IRWXO
 # Non-Standard
+from windows_tools.file_utils import get_paths_recursive_and_fix_permissions
 from luaparser.ast import parse
 from luaparser.ast import get_token_stream
 # Local 
 from typedef import LuaNode
 from transnode import TransNode
 from tools.updater import set_debug
+
 
 
 class Path(_path):
@@ -24,11 +27,9 @@ class Path(_path):
         return str(self)
     
 
-###########################################
-DEBUG = True 
-###########################################
+
 CWD = Path(os.getcwd())
-update, debug, init = set_debug(DEBUG)
+update, debug, init = set_debug(True)
 
 
 def timestamp():
@@ -186,15 +187,12 @@ def _transpile_submodule(filepath: str, project_directory: str, sm_name: str) ->
         final.append(tnode.python_string)
     
     # Create metadata stamp
-    stamp = (
-        f"# Creation Time: {timestamp()}\n"
-        f"# Module: {module_name}\n"
-        f"# File: {base_filename}.py\n"
-        f"# User: {os.getlogin()}\n\n"
-    )
+    stamp = f"# Creation Time: {timestamp()}\n# Module: {module_name}\n# File: {base_filename}.py\n# User:{os.getlogin()}\n\n"
+    
     
     # Write the transpiled Python file
     try:
+        change_file_perms(python_full_fp)
         with open(python_full_fp, "w") as f:
             f.write(stamp)
             f.write("\n".join(final))
@@ -228,13 +226,11 @@ def _init_submodule(module_name: Union[str, Path], project_dir: str) -> Tuple[Pa
         print(f'__init__.py file created at: {init_file_path}')
     """
     
-    submodule_path = Path(project_dir) / module_name
+    submodule_path = Path(project_dir).joinpath(module_name)
     try:
-        if not submodule_path.exists():
-            submodule_path.mkdir(parents=True)
-        init_file_path = submodule_path / "__init__.py"
-        with open(init_file_path, "w") as init_file:
-            pass  # Create an empty `__init__.py`
+        free_fp(submodule_path)
+        init_file_path = submodule_path.joinpath("__init__.py")
+        free_fp(init_file_path)
     except Exception as e:
         raise IOError(f"Error initializing submodule: {e}")
     
@@ -264,7 +260,6 @@ def _get_submodule_name(filepath: str|Path) -> str:
     # For debugging purposes, consider using logging instead of print
     # print(f"submodule: {base_name}")
     return str(base_name)
-
 
 def _transpile_root_module(filepath: str, project_dir: str) -> str:
     """
@@ -313,23 +308,36 @@ def _transpile_root_module(filepath: str, project_dir: str) -> str:
     
     # Create metadata signature
     filename = os.path.basename(filepath).split(".")[0]
-    signature = (
-        f"# Creation Time: {timestamp()}\n"
-        f"# File: {filename}.py\n"
-    )
+    signature = f"# Creation Time: {timestamp()}\n# File: {filename}.py\n"
     python_filename = f"{filename}.py"
     python_filepath = os.path.join(project_dir, python_filename)
     
+    NL = "\n"
     # Write the transpiled Python file
     try:
+        free_fp(python_filepath)
         with open(python_filepath, "w") as f:
             f.write(signature)
-            f.write("\n".join(final))
-            f.write("\n")
+            n = NL.join(final)
+            f.write(n)
+            f.write(NL)
     except IOError as e:
         raise IOError(f"Error writing Python file: {e}")
 
     return python_filepath
+
+def free_fp(filepath:str|Path):
+    """ Creates a dir or file if it doesnt exist, then fixes 
+    the file permissions to the at of who created it"""
+    fpexists = os.path.exists(filepath)
+    if os.path.isdir(filepath):
+        if fpexists == False:
+            os.mkdir(path=filepath)
+    elif os.path.isfile(filepath):
+        if fpexists == False:
+            with open(filepath, "w") as f:
+                f.close()
+    os.chmod(path=filepath, mode=S_IRWXO)
 
 def transpile_lua(filepath: str, follow_requires: bool = True) -> Optional[Path]:
     """
@@ -369,59 +377,67 @@ def transpile_lua(filepath: str, follow_requires: bool = True) -> Optional[Path]
             print(f'Transpiled main Python file created at: {transpile_path}')
     """
     
-    try:
-        # Resolve filepath and read content
-        filepath = Path(filepath).resolve()
-        if not filepath.is_file():
-            raise ValueError(f"Provided filepath does not point to a valid file: {filepath}")
-        
-        content: str = read_lua(filepath)
-        
-        # Determine project directory name
-        project_name = filepath.stem + "_" + random_number_sequence(10)
-        project_directory = Path(os.getcwd()) / project_name
-        project_directory.mkdir(parents=True)
-        
-        # Read source string
-        logging.info(f"Transpiling Lua file at: {filepath}")
-        
-        # Extract and transpile require statements
-        requires = _extract_require_statements(content) if follow_requires else []
-        if follow_requires:
-            for req in requires:
-                req_path = Path(req)
-                if req_path.is_file():
-                    if req_path.parent == filepath.parent:
-                        _transpile_root_module(req, project_directory)
-                else:
-                    submodule_name = _get_submodule_name(req)
-                    submodule_path, init_file_path = _init_submodule(submodule_name, project_directory)
-                    submodule_files = [file for file in submodule_path.iterdir() if file.is_file()]
-                    for sub_file in submodule_files:
-                        _transpile_submodule(str(sub_file), project_directory, submodule_name)
-        
-        # Acquire Trans nodes and stream
-        transnodes: List[TransNode] = string_to_transnodes(content)
-        token_stream = get_token_stream(content)
-        root_strings = []
-        for tnode in transnodes:
-            tnode.collect_tokens(token_stream=token_stream)
-            root_strings.append(tnode.python_string)
-        
-        # Write the transpiled Python file
-        signature = f"# Creation Time: {timestamp()}\n# File: {filepath.stem}.py\n"
-        python_filepath = project_directory / f"{filepath.stem}.py"
-        
-        with open(python_filepath, "w") as f:
-            f.write(signature)
-            f.write("\n".join(root_strings))
-            f.write("\n")
-        
-        return python_filepath
+
+    # Resolve filepath and read content
+    filepath = Path(filepath).resolve()
+    if not filepath.is_file():
+        raise ValueError(f"Provided filepath does not point to a valid file: {filepath}")
     
-    except Exception as e:
-        logging.error(f"An error occurred while transpiling Lua file: {e}")
-        return None
+    content: str = read_lua(filepath)
+    
+    # Determine project directory name
+    project_name = filepath.stem + "_" + random_number_sequence(10)
+    project_directory = Path(os.getcwd()).joinpath(project_name)
+    project_directory.mkdir(parents=True)
+    
+    # Read source string
+    logging.info(f"Transpiling Lua file at: {filepath}")
+    
+    # Extract and transpile require statements
+    requires = _extract_require_statements(content) if follow_requires  else []
+    if follow_requires:
+        for req in requires:
+            req_path = Path(req)
+            free_fp(req_path)
+
+            if req_path.is_file():
+                if req_path.parent == filepath.parent:
+                    try:
+                        _transpile_root_module(req, project_directory)
+                    except Exception as e:
+                        print(f"{e}\nfailed to transpile root module with _transpile_root_module('{req}', '{project_directory}')")
+                        logging.critical(f"{e}\nfailed to transpile root module with _transpile_root_module('{req}', '{project_directory}')")
+            else:
+                submodule_name = _get_submodule_name(req)
+                submodule_path, init_file_path = _init_submodule(submodule_name, project_directory)
+                submodule_files = [file for file in submodule_path.iterdir() if file.is_file()]
+                for sub_file in submodule_files:
+                    try:
+                        _transpile_submodule(str(sub_file), project_directory, submodule_name)
+                    except Exception as e:
+                        print(f"{e}\nfailed to transpile root module with _transpile_submodule('{sub_file}', '{project_directory}', '{submodule_name}')")
+                        logging.critical(f"{e}\nfailed to transpile root module with _transpile_root_module")
+
+    # Acquire Trans nodes and stream
+    transnodes: List[TransNode] = string_to_transnodes(content)
+    token_stream = get_token_stream(content)
+    root_strings = []
+    for tnode in transnodes:
+        tnode.collect_tokens(token_stream=token_stream)
+        root_strings.append(tnode.python_string)
+    
+    # Write the transpiled Python file
+    signature = f"# Creation Time: {timestamp()}\n# File: {filepath.stem}.py\n"
+    python_filepath = project_directory.joinpath(f"{filepath.stem}.py")
+    free_fp(python_filepath)
+    with open(python_filepath, "w") as f:
+        f.write(signature)
+        f.write("\n".join(root_strings))
+        f.write("\n")
+    
+    return python_filepath
+    
+    
 
     
     

@@ -83,9 +83,10 @@ class TransNode:
     def collect_tokens(self, token_stream: CommonTokenStream):
         self.lua_tokens.append(token_stream.getTokens(self.lua_node.first_token.start, self.lua_node.last_token.stop))
         self.indentation = token_stream.getHiddenTokensToLeft(self.lua_node.first_token.start)
+        self.indentation = 0 if self.indentation == None else len(self.indentation)
         # fixes the indents here
         retv = []
-        ind = " "*len(self.indentation)
+        ind = " "*self.indentation
         for line in self.python_string.split("\n"):
             retv.append(ind + line)
         self.__python_string = "\n".join(retv)
