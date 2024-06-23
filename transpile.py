@@ -330,13 +330,16 @@ def free_fp(filepath:str|Path):
     """ Creates a dir or file if it doesnt exist, then fixes 
     the file permissions to the at of who created it"""
     fpexists = os.path.exists(filepath)
+    
     if os.path.isdir(filepath):
         if fpexists == False:
             os.mkdir(path=filepath)
     elif os.path.isfile(filepath):
         if fpexists == False:
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
             with open(filepath, "w") as f:
                 f.close()
+    
     os.chmod(path=filepath, mode=S_IRWXO)
 
 def transpile_lua(filepath: str, follow_requires: bool = True) -> Optional[Path]:
@@ -397,7 +400,7 @@ def transpile_lua(filepath: str, follow_requires: bool = True) -> Optional[Path]
     requires = _extract_require_statements(content) if follow_requires  else []
     if follow_requires:
         for req in requires:
-            req_path = Path(req)
+            req_path = Path(os.path.join(CWD, project_directory, req))
             free_fp(req_path)
 
             if req_path.is_file():
