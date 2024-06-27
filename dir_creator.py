@@ -8,10 +8,11 @@ def lua_to_python_name(name):
     For example, 'module.lua' -> 'module.py'
     """
     if name.endswith('.lua'):
-        return name[:-4] + '.py'
+        name = name[:-4] + '.py'
+    name.replace("/./", "/")
     return name
 
-def reproduce_directory_with_conversion(src, dest):
+def reproduce_directory_with_conversion(src, dest) -> dict:
     """
     Recursively reproduce directory structure from src to dest, converting Lua modules to Python modules.
     
@@ -25,33 +26,35 @@ def reproduce_directory_with_conversion(src, dest):
     for root, dirs, files in os.walk(src):
         # Compute relative path to maintain the structure
         rel_path = os.path.relpath(root, src)
-        dest_dir = os.path.join(dest, lua_to_python_name(rel_path))
+        dest_dir = os.path.join(dest, lua_to_python_name(rel_path).replace(".", ""))
         
         # Create directories in destination
         os.makedirs(dest_dir, exist_ok=True)
+        print("CREATE ", dest_dir)
         
         # Copy and rename files
         for file in files:
+            
             src_file = os.path.join(root, file)
             dest_file = os.path.join(dest_dir, lua_to_python_name(file))
             dest_init = os.path.join(dest_dir, "__init__.py")
             shutil.copy2(src_file, dest_file)
+            print("COPY  ", src_file, " ", dest_file)
             # add init file
             with open(dest_init, "w") as create:
                     create.close()
+            print("CREATE ", dest_init)
             mapping[src_file] = dest_file
         
         # Rename directories after files are handled
         for dir in dirs:
-            new_dir_name = lua_to_python_name(dir)
-            if new_dir_name != dir:
-                rt = os.path.join(root, dir)
-                nd = os.path.join(root, new_dir_name)
-                os.rename(rt, nd)
+            new_root = dest_dir + os.sep + os.path.basename(dir)
+            add_me = reproduce_directory_with_conversion(dir, new_root)
+            try:
+                for lua, py in add_me.items():
+                    mapping[lua] = py
+            except:
+                pass
         return mapping        
         
-if __name__ == "__main__":
-    src_dir = "testproj"  # Replace with the actual source directory
-    dest_dir = "python_proj"  # Replace with the actual destination directory
-    
-    reproduce_directory_with_conversion(src_dir, dest_dir)
+

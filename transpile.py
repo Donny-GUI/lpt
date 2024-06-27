@@ -7,11 +7,21 @@ from typing import List, Optional
 # Non-Standard
 from luaparser.ast import parse
 from luaparser.ast import get_token_stream
+from luaparser.astnodes import Name
+import shutil
 # Local 
 from typedef import LuaNode
 from transnode import TransNode
 from dir_creator import reproduce_directory_with_conversion
-from require import remove_require_statements, locate_lua_requires, get_lua_require_type, LuaRequire
+from require import remove_require_statements, locate_lua_requires, get_lua_require_type, require_path_to_python_import
+from dataclasses import dataclass 
+
+
+@dataclass
+class LuaPythonPackage:
+    imports = []
+    requires = []
+    names = []
 
 
 CWD = Path(os.getcwd())
@@ -90,17 +100,22 @@ def lua_file_to_lua_nodes(filepath:str) -> List[LuaNode]:
 def transpile_lua_directory(directory: str) -> Optional[Path]:
     dn = directory+"_python"
     mapping = reproduce_directory_with_conversion(directory, dn)
-    require_mapping = {}
-    reqs = []
-    file_content_map = {}
 
+    reqs = []
     for lua, py in mapping.items():
+        src = []
+        names = []
         # read file to string
         luacontent = read_lua(lua)
         # get the require statements 
         all_reqs = locate_lua_requires(luacontent)
-        # map requires to this file
-        require_mapping[lua] = all_reqs
+        # convert them to import statements
+
+        for r in reqs:
+            imp = require_path_to_python_import(r)
+            src.append(imp)
+
+        src.append("\n")
         # add it too all reqs
         reqs.extend(all_reqs)
         # remove the require statements
@@ -108,20 +123,21 @@ def transpile_lua_directory(directory: str) -> Optional[Path]:
         # get the ast nodes for the lua_content 
         transnodes: List[TransNode] = string_to_transnodes(luacont)
         token_stream = get_token_stream(luacont)
-        root_strings = []
         # Get the python string representation of the ast nodes
+
         for tnode in transnodes:
             tnode.collect_tokens(token_stream=token_stream)
-            root_strings.append(tnode.python_string)
+            src.append(tnode.python_string)
+        py = py.replace("/./", "/")
+        os.makedirs(os.path.dirname(py), exist_ok=True)
+        with open(py, "w") as f:
+            for block in src:
+                f.write(block+"\n")
 
-        file_content_map[py] = root_strings
 
-    reqs = list(set(reqs))
-    for path in reqs:
-        t = get_lua_require_type(path)
         
 
     
 
 if __name__ == "__main__":
-    transpile_lua_directory(".\\testproj\\test.lua")
+    transpile_lua_directory("..\\decompiled")

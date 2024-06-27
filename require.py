@@ -9,7 +9,6 @@ class LuaRequire:
     SubmoduleFile = 1
     StandardFile = 2
     Standard = 3
-    Local = 4
     LocalFile = 5
     Unknown = 6
     DoesntExist = 7
@@ -61,29 +60,57 @@ def get_lua_require_type(require_statement:str):
 
     return LuaRequire.DoesntExist 
 
-
 def require_path_to_python_import(require_path:str):
     
+    def _from_importize(require: str):
+        parts = ".".join(require.split("/"))
+        return "from " + parts + " import *"
+    
+    def _stylize_file_import(require: str):
+        c = require.count(os.sep)
+        if c == 0:
+            return f"import {require}"
+        elif c == 1:
+            parts = require.split(os.sep)
+            return f"from {parts[0]} import {parts[1]}"
+        elif c == 2:
+            parts = require.split(os.sep)
+            return f"from {parts[0]}.{parts[1]} import {parts[2]}"
+        elif c > 2:
+            parts = require.split(os.sep)
+            attr_str = ".".join(parts[1:-1])
+            return f"from {parts[0]}.{attr_str} import {parts[-1]}"
+
+    def _remove_front(require: str):
+        parts = require.split("/")
+        dn = os.getcwd().split(os.sep)[-1]
+        dindex = parts.index(dn)
+        return os.sep.join(parts[dindex:])
+
     rp = get_lua_require_type(require_path)
     match rp:
-        case LuaRequire.Local: 
-            pass
         case LuaRequire.LocalFile:
-            pass
+            # if the lua file is a file is one the first level of the directory
+            return _stylize_file_import(os.path.basename(require_path))
+            
         case LuaRequire.Standard:
-            pass 
+            return f"from {os.path.basename(os.path.dirname(require_path))} import {os.path.basename(require_path)}"
+        
         case LuaRequire.StandardFile:
-            pass
+            return f"import {os.path.basename(require_path)}"
+        
         case LuaRequire.Submodule:
-            pass
+            return _stylize_file_import(_remove_front(require_path))
+        
         case LuaRequire.SubmoduleFile:
-            pass
+            return _stylize_file_import(_remove_front(require_path))
+            
         case LuaRequire.DoesntExist:
             pass
         case LuaRequire.Unknown:
             pass
     
-
+    return ""
 
 def locate_lua_requires(string):
     retv = []
