@@ -1,8 +1,7 @@
 import os
-import re
 from tokenize import detect_encoding
 from datetime import datetime
-from pathlib import Path as _path
+from pathlib import Path
 from random import randint
 from typing import List, Optional
 # Non-Standard
@@ -12,21 +11,10 @@ from luaparser.ast import get_token_stream
 from typedef import LuaNode
 from transnode import TransNode
 from dir_creator import reproduce_directory_with_conversion
-from require import remove_require_statements, locate_lua_requires
-
-
-class Path(_path):
-    def __init__(self, *args: str | os.PathLike[str]) -> None:
-        super().__init__(*args)
-    
-    def string(self):
-        return str(self)
+from require import remove_require_statements, locate_lua_requires, get_lua_require_type, LuaRequire
 
 
 CWD = Path(os.getcwd())
-
-def filename(filepath:str|Path):
-    return os.path.basename(str(filepath)).split(".")[0]
 
 def timestamp():
     return datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
@@ -99,65 +87,41 @@ def lua_file_to_lua_nodes(filepath:str) -> List[LuaNode]:
     nodes = parse(string)
     return [node for node in nodes.body.body]
 
-def lua_check_require(lua_string:str) -> bool:
-    lines = lua_string.split("\n")
-    for line in lines:
-        if line.startswith("require"):
-            return True
-    return False
-
-def transpile_lua_file(lua_path: str, python_path):
-    content: str = read_lua(lua_path)
-    require_pattern = re.compile(r'require\s*[\'"]([^\'"]+)[\'"]')
-
-    module_names = []
-    startindex = 0
-    for modname in require_pattern.finditer(content):
-        startindex = modname.end()
-        reqstring = modname.string[7:].strip("'").strip('"').strip("()").strip()
-        req = reqstring.replace("/", ".")
-        module_names.append(req)
-
-    content = content[startindex+1:]
-    transnodes: List[TransNode] = string_to_transnodes(content)
-    token_stream = get_token_stream(content)
-
-    root_strings = []
-    for tnode in transnodes:
-        tnode.collect_tokens(token_stream=token_stream)
-        root_strings.append(tnode.python_string)
-
-    with open(python_path, "w") as f:
-        f.write("\n".join(root_strings))
-        f.write("\n")
-
 def transpile_lua_directory(directory: str) -> Optional[Path]:
     dn = directory+"_python"
     mapping = reproduce_directory_with_conversion(directory, dn)
+    require_mapping = {}
     reqs = []
+    file_content_map = {}
+
     for lua, py in mapping.items():
+        # read file to string
         luacontent = read_lua(lua)
-        require_paths = locate_lua_requires(luacontent)
-        reqs.extend(require_paths)
+        # get the require statements 
+        all_reqs = locate_lua_requires(luacontent)
+        # map requires to this file
+        require_mapping[lua] = all_reqs
+        # add it too all reqs
+        reqs.extend(all_reqs)
+        # remove the require statements
         luacont = remove_require_statements(luacontent)
+        # get the ast nodes for the lua_content 
         transnodes: List[TransNode] = string_to_transnodes(luacont)
         token_stream = get_token_stream(luacont)
-
         root_strings = []
+        # Get the python string representation of the ast nodes
         for tnode in transnodes:
             tnode.collect_tokens(token_stream=token_stream)
             root_strings.append(tnode.python_string)
 
+        file_content_map[py] = root_strings
+
     reqs = list(set(reqs))
     for path in reqs:
-        pass 
-
-
+        t = get_lua_require_type(path)
         
 
-def make_new_project_path(lua_name:str):
-    return os.path.join(CWD, lua_name)
     
-if __name__ == "__main__":
 
-    transpile_lua(".\\testproj\\test.lua")
+if __name__ == "__main__":
+    transpile_lua_directory(".\\testproj\\test.lua")
