@@ -9,6 +9,9 @@ import stat
 def public_domain(file: str|Path):
     if isinstance(file, Path) == False:
         file = Path(file)
+    if os.path.isdir(file) and os.path.exists(file) == False:
+        os.makedirs(file)
+    
     os.chmod(path=file, mode=stat.S_IRWXO)
 
 def change_file_perms(filepath:str|Path):
