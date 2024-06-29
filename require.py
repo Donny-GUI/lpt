@@ -1,5 +1,6 @@
 import os
 import re
+from pathlib import Path
 
 require_pattern = re.compile(r'require\s*[\'"]([^\'"]+)[\'"]')
 statement = re.compile(r'[\'"]([^\'"]+)[\'"]')
@@ -22,13 +23,15 @@ def get_lua_paths():
 def get_require_statements(string: str):
     module_names = []
     for modname in require_pattern.finditer(string):
-        module_names.append(statement.match(modname))
+        if isinstance(modname, re.Match):
+            module_names.append(statement.match(modname.string))
     return module_names
 
 def remove_require_statements(string: str):
     retv = string
     for modname in require_pattern.finditer(string):
-        retv = retv.replace(modname, "")
+        if isinstance(modname, re.Match):
+            retv = retv.replace(modname.string, "")
     return retv
 
 def get_lua_require_type(require_statement:str):
@@ -115,7 +118,7 @@ def require_path_to_python_import(require_path:str):
 def locate_lua_requires(string):
     retv = []
     paths = get_lua_paths()
-    statements = get_require_statements(string)
+    statements = [x for x in get_require_statements(string) if x != None]
     for path in paths:
         for statement in statements:
             statement = statement.replace("/", os.sep)
@@ -125,4 +128,5 @@ def locate_lua_requires(string):
             cwdlua = os.path.join(os.getcwd(), statement)
             if os.path.exists(cwdlua):
                 retv.append(cwdlua)
+    
     return retv 

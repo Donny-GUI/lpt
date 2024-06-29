@@ -1,3 +1,0 @@
-
-
-require("testsubmod.submod")

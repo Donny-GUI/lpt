@@ -43,13 +43,22 @@ class TransNode:
         # as needed attributes
         self.__python_node = None
         self.__python_string = None
+        self.indentation = 0
+        
 
         # input dependent attributes
         if isinstance(self.__source, FilePointer):
             self.__lua_slice: Slice = None
             self.__lua_string = None
         else:
-            self.__lua_slice = Slice(self.lua_node.first_token.start, self.lua_node.last_token.stop)
+            try:
+                self.__lua_slice = Slice(self.lua_node.first_token.start, self.lua_node.last_token.stop)
+            except:
+                try:
+                    self.__lua_slice = Slice(self.lua_node.first_token.start, -1)
+                except:
+                    self.__lua_slice = Slice(0, -1)
+
             self.__lua_string = self.__source[self.__lua_slice.start:self.__lua_slice.end]
             
     @property
@@ -81,9 +90,15 @@ class TransNode:
         return self.__python_node
     
     def collect_tokens(self, token_stream: CommonTokenStream):
-        self.lua_tokens.append(token_stream.getTokens(self.lua_node.first_token.start, self.lua_node.last_token.stop))
-        self.indentation = token_stream.getHiddenTokensToLeft(self.lua_node.first_token.start)
+        self.lua_tokens.append(token_stream.getTokens(self.__lua_slice.start, self.__lua_slice.end))
+
+        try:
+            self.indentation = token_stream.getHiddenTokensToLeft(self.lua_node.first_token.start)
+        except:
+            self.indentation = None
+
         self.indentation = 0 if self.indentation == None else len(self.indentation)
+            
         # fixes the indents here
         retv = []
         ind = " "*self.indentation
